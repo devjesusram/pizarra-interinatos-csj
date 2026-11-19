@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pizarra de Interinatos</title>
+  <link rel="stylesheet" href="/static/estilos.css">
+</head>
+<body>
+  <header class="barra">
+    <h1>⚖ Pizarra <span class="sub ocultar-movil" id="circunscripcion"></span></h1>
+    <div class="nav">
+      <button id="ant" title="Semana anterior (←)">◀</button>
+      <span class="rango" id="rango"></span>
+      <button id="sig" title="Semana siguiente (→)">▶</button>
+      <button id="hoy" title="Ir a hoy (T)">Hoy</button>
+      <select id="largo" aria-label="Cantidad de semanas">
+        <option value="14">2 semanas</option>
+        <option value="28">4 semanas</option>
+        <option value="42">6 semanas</option>
+      </select>
+      <button id="btn-tv" class="ocultar-movil" title="Pantalla de solo lectura para un monitor">Modo TV</button>
+      <div class="usuario">
+        <button id="btn-usuario" aria-haspopup="true">👤 <span id="nombre-usuario"></span> ▾</button>
+        <div class="menu" id="menu-usuario" hidden>
+          <button id="m-admin" hidden>⚙ Administración</button>
+          <button id="m-clave">🔑 Cambiar contraseña</button>
+          <button id="m-salir">↩ Salir</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="herramientas">
+    <button class="btn primario" id="btn-licencia">+ Licencia <kbd>L</kbd></button>
+    <button class="btn primario" id="btn-interinato">+ Interinato <kbd>I</kbd></button>
+    <label class="ocultar-movil">Vista
+      <select id="vista">
+        <option value="cargo">Por cargo</option>
+        <option value="despacho">Por despacho</option>
+      </select>
+    </label>
+    <label>Cargo <select id="f-cargo"><option value="">Todos</option></select></label>
+    <label class="ocultar-movil">Fuero <select id="f-fuero"><option value="">Todos</option></select></label>
+    <label class="ocultar-movil">Localidad <select id="f-localidad"><option value="">Todas</option></select></label>
+    <label><input type="checkbox" id="f-novedades" checked> Solo con novedades</label>
+    <input type="search" id="f-buscar" placeholder="🔍 Buscar funcionario o despacho…" aria-label="Buscar">
+    <span class="sep"></span>
+    <button class="btn ocultar-movil" id="btn-ics">⇩ Exportar .ics</button>
+  </div>
+
+  <div class="alertas" id="alertas" hidden></div>
+  <main class="tablero" id="tablero"><div class="vacio">Cargando…</div></main>
+  <footer class="leyenda">
+    <span class="l-lic">Licencia</span>
+    <span class="l-int">Cubriendo un interinato</span>
+    <span class="l-cub">✔ Cubierto por</span>
+    <span class="l-sin">⚠ Ausente sin cubrir</span>
+    <span class="l-con">⚡ Interinato en conflicto</span>
+    <span class="l-inh">Fin de semana / inhábil</span>
+    <span style="margin-left:auto">Clic o arrastre sobre los días de una fila para cargar una licencia</span>
+  </footer>
+
+  <dialog id="modal"></dialog>
+  <dialog id="modal2"></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <section class="tv" id="tv" hidden></section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

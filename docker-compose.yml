@@ -1,0 +1,42 @@
+# Pizarra digital de interinatos y licencias
+# Uso:  docker compose up -d        (ver README.md)
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pizarra
+      POSTGRES_USER: pizarra
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD en el archivo .env}
+      TZ: America/Asuncion
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pizarra -d pizarra"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: pizarra-interinatos:${VERSION:-1.0}
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://pizarra:${DB_PASSWORD}@db:5432/pizarra
+      ZONA_HORARIA: America/Asuncion
+      NOMBRE_CIRCUNSCRIPCION: ${NOMBRE_CIRCUNSCRIPCION:-Circunscripción Judicial de Cordillera}
+      ICS_TOKEN_GENERAL: ${ICS_TOKEN_GENERAL:-}
+      SESION_HORAS: ${SESION_HORAS:-12}
+      COOKIE_SEGURA: ${COOKIE_SEGURA:-false}
+    volumes:
+      - adjuntos:/data/adjuntos
+    ports:
+      - "${PUERTO:-8080}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:
+  adjuntos:

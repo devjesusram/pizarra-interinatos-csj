@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pizarra de Interinatos · Ingreso</title>
+  <link rel="stylesheet" href="/static/estilos.css">
+</head>
+<body>
+  <form class="login" id="form-login" autocomplete="on">
+    <h1>⚖ Pizarra de Interinatos</h1>
+    <p>Licencias e interinatos de la circunscripción</p>
+    <label for="usuario">Usuario</label>
+    <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus>
+    <label for="clave">Contraseña</label>
+    <input type="password" id="clave" name="clave" autocomplete="current-password" required>
+    <button class="btn primario" type="submit">Ingresar</button>
+    <div class="error" id="error" role="alert"></div>
+  </form>
+  <script>
+    document.getElementById("form-login").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const err = document.getElementById("error");
+      err.textContent = "";
+      try {
+        const r = await fetch("/api/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usuario: ev.target.usuario.value, clave: ev.target.clave.value }),
+        });
+        if (r.ok) { location.href = "/"; return; }
+        const d = await r.json().catch(() => ({}));
+        err.textContent = d.detail || "No se pudo iniciar sesión.";
+      } catch (e) {
+        err.textContent = "No hay conexión con el servidor.";
+      }
+    });
+  </script>
+</body>
+</html>
