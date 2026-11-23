@@ -55,13 +55,13 @@ Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no
 Resumen:
 
 ```bash
-./scripts/preparar-paquete-offline.sh        # en una PC con internet
+bash scripts/preparar-paquete-offline.sh        # en una PC con internet
 ```
 ```bash
-./scripts/instalar-offline.sh                # en el servidor, dentro de /opt/pizarra
+bash scripts/instalar-offline.sh                # en el servidor, dentro de /opt/pizarra
 ```
 ```bash
-./scripts/crear-admin.sh admin "Nombre y Apellido"
+bash scripts/crear-admin.sh admin "Nombre y Apellido"
 ```
 
 ## Estructura

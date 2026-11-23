@@ -3,7 +3,7 @@
 # Instala o ACTUALIZA la Pizarra en un servidor sin internet.
 # Ejecútelo dentro de la carpeta descomprimida del paquete:
 #
-#   cd /opt/pizarra && ./scripts/instalar-offline.sh
+#   cd /opt/pizarra && bash scripts/instalar-offline.sh
 #
 # Los datos (base de datos y adjuntos) se conservan entre actualizaciones.
 # ─────────────────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ for i in $(seq 1 60); do
     echo
     echo "✔ La Pizarra está funcionando en: http://$(hostname -I 2>/dev/null | awk '{print $1}'):${PUERTO}"
     echo "  Si es la primera instalación, cree el administrador:"
-    echo "    ./scripts/crear-admin.sh admin \"Nombre y Apellido\""
+    echo "    bash scripts/crear-admin.sh admin \"Nombre y Apellido\""
     exit 0
   fi
   sleep 2

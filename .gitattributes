@@ -1,0 +1,7 @@
+# Los scripts deben tener finales de línea de Linux (LF), aunque se clonen en Windows
+*.sh text eol=lf
+*.py text eol=lf
+*.sql text eol=lf
+docker-compose.yml text eol=lf
+Dockerfile text eol=lf
+.env.example text eol=lf

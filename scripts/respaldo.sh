@@ -5,7 +5,7 @@
 #
 # Guarda los últimos 30 días. Para que corra solo cada noche a las 23:30:
 #   crontab -e
-#   30 23 * * * /opt/pizarra/scripts/respaldo.sh /opt/pizarra-respaldos >> /opt/pizarra-respaldos/respaldo.log 2>&1
+#   30 23 * * * bash /opt/pizarra/scripts/respaldo.sh /opt/pizarra-respaldos >> /opt/pizarra-respaldos/respaldo.log 2>&1
 #
 # IMPORTANTE: copie también la carpeta de respaldos a OTRO equipo (NAS, servidor
 # de archivos o disco externo). Un respaldo en el mismo servidor no sirve si el

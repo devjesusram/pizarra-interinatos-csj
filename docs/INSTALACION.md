@@ -43,12 +43,22 @@ git clone https://github.com/devjesusram/pizarra-interinatos-csj.git
 **En Ubuntu o en macOS** (dentro de la carpeta del proyecto):
 
 ```bash
-./scripts/preparar-paquete-offline.sh
+bash scripts/preparar-paquete-offline.sh
 ```
 
 Esto crea `paquete-offline/pizarra-offline-AAAAMMDD.tar.gz`, de unos 200 MB.
 
-**En Windows (PowerShell)**, dentro de la carpeta del proyecto, ejecute estas tres órdenes una por una:
+**En Windows:**
+
+1. Descomprima el ZIP de GitHub y cambie el nombre de la carpeta a `pizarra`, de modo que quede en `C:\pizarra`.
+   Dentro tiene que estar el archivo `docker-compose.yml`.
+2. Abra **PowerShell** y entre a la carpeta:
+
+```bash
+cd C:\pizarra
+```
+
+3. Ejecute estas tres órdenes una por una:
 
 ```bash
 docker build --platform linux/amd64 -t pizarra-interinatos:1.0 backend
@@ -60,16 +70,16 @@ docker pull --platform linux/amd64 postgres:16
 docker save pizarra-interinatos:1.0 postgres:16 -o imagenes.tar
 ```
 
-Después arme una carpeta llamada `pizarra` con este contenido:
+4. Empaquete la carpeta. Windows 10 y 11 ya traen el comando `tar`:
 
+```bash
+cd C:\
 ```
-pizarra/
-├── imagenes.tar
-├── docker-compose.yml
-├── .env.example
-├── docs/
-└── scripts/   (instalar-offline.sh, crear-admin.sh, respaldo.sh, restaurar.sh)
+```bash
+tar -czf pizarra-offline.tar.gz pizarra
 ```
+
+Queda el archivo `C:\pizarra-offline.tar.gz`, de unos 200 MB. Ese es el paquete que se copia al servidor.
 
 ### 1.4 Descargar Docker para el servidor (solo la primera vez)
 
@@ -135,13 +145,13 @@ docker compose version
 Copie el paquete a `/opt` y descomprímalo (si trajo la carpeta `pizarra` en lugar del `.tar.gz`, simplemente cópiela a `/opt/pizarra`):
 
 ```bash
-sudo mkdir -p /opt && sudo tar -xzf pizarra-offline-*.tar.gz -C /opt && sudo chown -R $USER:$USER /opt/pizarra
+sudo mkdir -p /opt && sudo tar -xzf pizarra-offline*.tar.gz -C /opt && sudo chown -R $USER:$USER /opt/pizarra
 ```
 
 Instale el sistema:
 
 ```bash
-cd /opt/pizarra && ./scripts/instalar-offline.sh
+cd /opt/pizarra && bash scripts/instalar-offline.sh
 ```
 
 El script:
@@ -153,7 +163,7 @@ El script:
 ### 2.5 Crear el primer administrador
 
 ```bash
-./scripts/crear-admin.sh admin "Su Nombre y Apellido"
+bash scripts/crear-admin.sh admin "Su Nombre y Apellido"
 ```
 
 El script le pide una contraseña de al menos 8 caracteres.
@@ -196,7 +206,7 @@ Cuando termine de practicar y quiera empezar de cero con los datos reales, este 
 docker compose down -v
 ```
 
-Después vuelva a ejecutar `./scripts/instalar-offline.sh` y `./scripts/crear-admin.sh`.
+Después vuelva a ejecutar `bash scripts/instalar-offline.sh` y `bash scripts/crear-admin.sh`.
 
 ---
 
@@ -205,7 +215,7 @@ Después vuelva a ejecutar `./scripts/instalar-offline.sh` y `./scripts/crear-ad
 Hacer un respaldo ahora:
 
 ```bash
-./scripts/respaldo.sh /opt/pizarra-respaldos
+bash scripts/respaldo.sh /opt/pizarra-respaldos
 ```
 
 Para que se haga solo cada noche a las 23:30, abra el programador de tareas:
@@ -217,7 +227,7 @@ crontab -e
 y agregue esta línea al final:
 
 ```
-30 23 * * * /opt/pizarra/scripts/respaldo.sh /opt/pizarra-respaldos >> /opt/pizarra-respaldos/respaldo.log 2>&1
+30 23 * * * bash /opt/pizarra/scripts/respaldo.sh /opt/pizarra-respaldos >> /opt/pizarra-respaldos/respaldo.log 2>&1
 ```
 
 - Se guardan los respaldos de los últimos 30 días.
@@ -226,7 +236,7 @@ y agregue esta línea al final:
 - **Pruebe una restauración** una vez al mes, mejor en un equipo de pruebas:
 
 ```bash
-./scripts/restaurar.sh /opt/pizarra-respaldos/pizarra-db-AAAAMMDD-HHMM.dump /opt/pizarra-respaldos/pizarra-adjuntos-AAAAMMDD-HHMM.tar.gz
+bash scripts/restaurar.sh /opt/pizarra-respaldos/pizarra-db-AAAAMMDD-HHMM.dump /opt/pizarra-respaldos/pizarra-adjuntos-AAAAMMDD-HHMM.tar.gz
 ```
 
 ---
@@ -239,7 +249,7 @@ y agregue esta línea al final:
 4. Ejecute:
 
 ```bash
-cd /opt/pizarra && ./scripts/instalar-offline.sh
+cd /opt/pizarra && bash scripts/instalar-offline.sh
 ```
 
 Los datos (base de datos y adjuntos) se conservan.
@@ -251,7 +261,7 @@ Los datos (base de datos y adjuntos) se conservan.
 | Problema | Solución |
 |---|---|
 | "port is already allocated" | Otro programa usa el puerto 8080. Cambie `PUERTO=8090` en `.env` y ejecute `docker compose up -d`. |
-| Olvidé la contraseña del administrador | `./scripts/crear-admin.sh admin "Nombre"` vuelve a ponerle una contraseña. |
+| Olvidé la contraseña del administrador | `bash scripts/crear-admin.sh admin "Nombre"` vuelve a ponerle una contraseña. |
 | Un operador olvidó su contraseña | Un administrador entra en Administración → Usuarios → Editar y le pone una nueva. |
 | El sistema no abre | Revise si está corriendo con `docker compose ps` y mire los errores con `docker compose logs app --tail 50`. |
 | Las fechas aparecen corridas | Revise la zona horaria del servidor (paso 2.2). |
