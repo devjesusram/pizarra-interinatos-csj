@@ -7,8 +7,12 @@ del personal judicial (Juez, Actuario/a, Secretario/a, Ujier) de la **Circunscri
 > (licencias aprobadas por el Consejo de Administración o por RRHH) y asigna los interinos. El sistema ordena,
 > muestra en un calendario y **valida** que no haya cruces de fechas.
 
-Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no usa Active Directory. Funciona
-**sin internet**.
+Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no usa Active Directory.
+
+**Liviano:** corre en cualquier PC con Windows 10/11, sin internet, sin Docker y sin instalar Python. La base de
+datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y el resto entra desde el navegador.
+
+👉 **Instalación: [docs/INSTALACION-WINDOWS.md](docs/INSTALACION-WINDOWS.md)**
 
 ## Qué hace
 
@@ -19,17 +23,17 @@ Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no
   - 🟨 **⚠ Sin cubrir** (clic para asignar un interino)
   - 🟪 **⚡ En conflicto** (el interino recibió una licencia)
 - **Alertas:** ausentes sin interino en días hábiles e interinatos en conflicto.
-- **Validación anti-errores:** se aplica en el backend y además en la base de datos. Ver las reglas abajo.
+- **Validación anti-errores:** se aplica en la aplicación y además en la base de datos (triggers). Ver las reglas abajo.
 - **Registro de licencias desde el correo:** se adjunta el PDF o el `.eml`. Si se arrastra un `.eml`, el sistema
   completa remitente, fecha y asunto.
 - **Selector de interinos:** muestra solo personas del mismo cargo, con su disponibilidad y el motivo cuando no
   están disponibles.
-- **Exportación `.ics`:** archivo descargable y enlace de suscripción por funcionario, para Google, Outlook o el
-  teléfono.
+- **Exportación `.ics`:** archivo descargable y enlace de suscripción por funcionario.
 - **Modo TV:** pantalla de solo lectura para un monitor en la oficina.
-- **Usuarios y roles:** OPERADOR / ADMIN. Hay **auditoría** completa: quién cargó qué y qué avisos confirmó.
-- **Control de concurrencia:** si dos operadores editan el mismo registro, el segundo recibe un aviso en lugar de
-  pisar el cambio del primero.
+- **Usuarios y roles:** OPERADOR / ADMIN, con **auditoría** completa.
+- **Varios operadores a la vez:** las escrituras se atienden de a una (`BEGIN IMMEDIATE`), así que dos personas
+  guardando al mismo tiempo no pueden generar cruces. Si dos editan el mismo registro, el segundo recibe un aviso.
+- **Respaldo automático nocturno** y restauración con un doble clic.
 
 ### Reglas de validación
 
@@ -39,8 +43,8 @@ Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no
 | R2 | Nadie puede cubrirse a sí mismo | ⛔ Bloquea |
 | R3 | Funcionario dado de baja | ⛔ Bloquea |
 | R4 | El interino está de licencia | ⛔ Bloquea |
-| R5 | El interino ya cubre otro despacho (salvo jueces, que pueden acumular) | ⛔ Bloquea · ℹ️ informa en jueces |
-| R6 | El titular ya tiene interino en esas fechas | ⛔ Bloquea |
+| R5 | El interino ya cubre otro despacho (salvo jueces, que pueden acumular) | ⛔ Bloquea (también en la BD) · ℹ️ informa en jueces |
+| R6 | El titular ya tiene interino en esas fechas | ⛔ Bloquea (también en la BD) |
 | R7 | El interino está ausente y cubierto por otro | ⛔ Bloquea |
 | R8 | El titular no tiene licencia registrada en parte del período | ⚠ Pide confirmación |
 | R9 | Solo entre pares (Juez↔Juez, Actuario↔Actuario…) | ⛔ Bloquea (también en la BD) |
@@ -48,63 +52,54 @@ Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no
 | L1 | Dos licencias de la misma persona se cruzan | ⛔ Bloquea (también en la BD) |
 | L2 | La licencia de alguien que está cubriendo un despacho | ✔ Se guarda y el interinato pasa a **EN CONFLICTO** |
 
-## Instalación
-
-👉 **[docs/INSTALACION.md](docs/INSTALACION.md)**: guía paso a paso para un servidor sin internet.
-
-Resumen:
-
-```bash
-bash scripts/preparar-paquete-offline.sh        # en una PC con internet
-```
-```bash
-bash scripts/instalar-offline.sh                # en el servidor, dentro de /opt/pizarra
-```
-```bash
-bash scripts/crear-admin.sh admin "Nombre y Apellido"
-```
-
 ## Estructura
 
 ```
-├── docker-compose.yml        # PostgreSQL 16 + aplicación
-├── .env.example              # configuración (copiar a .env)
-├── backend/
-│   ├── Dockerfile
-│   ├── app/
-│   │   ├── esquema.sql       # tablas, restricciones EXCLUDE y trigger "entre pares"
-│   │   ├── validaciones.py   # reglas R1–R10 / L1
-│   │   ├── servicios.py      # alta/edición/anulación con locks, auditoría y conflictos (L2)
-│   │   ├── main.py           # API (FastAPI) y páginas
-│   │   ├── auth.py           # usuarios propios (contraseñas con scrypt) y sesiones
-│   │   ├── ics.py            # exportación iCalendar
-│   │   ├── cli.py            # crear-admin, datos de ejemplo
-│   │   └── static/           # interfaz (HTML + CSS + JavaScript, sin dependencias externas)
-│   └── tests/                # pruebas con PostgreSQL real
-├── scripts/                  # paquete sin internet, instalación, respaldo, restauración
-└── docs/INSTALACION.md
+├── app/
+│   ├── esquema.sql        # tablas SQLite y triggers (sin cruces, solo entre pares)
+│   ├── validaciones.py    # reglas R1–R10 / L1
+│   ├── servicios.py       # alta/edición/anulación con auditoría y conflictos (L2)
+│   ├── main.py            # API (FastAPI) y páginas
+│   ├── servidor.py        # arranque del servidor web (python -m app.servidor)
+│   ├── auth.py            # usuarios propios (contraseñas con scrypt) y sesiones
+│   ├── ics.py             # exportación iCalendar
+│   ├── cli.py             # crear-admin, demo, respaldo, restaurar
+│   ├── config.py          # configuración (configuracion.txt / variables de entorno)
+│   └── static/            # interfaz (HTML + CSS + JavaScript, sin dependencias externas)
+├── windows/               # archivos .bat y .ps1 que van en el paquete de Windows
+├── scripts/armar_paquete_windows.py   # arma dist/Pizarra-Windows-<versión>.zip
+├── tests/                 # pruebas automáticas
+└── docs/INSTALACION-WINDOWS.md
 ```
 
-## Desarrollo
+## Armar el paquete para Windows
 
-Requiere Python 3.12 o superior y un PostgreSQL 16 de pruebas.
+En cualquier computadora con internet y Python 3.12 o superior (Linux, macOS o Windows):
+
+```bash
+python scripts/armar_paquete_windows.py
+```
+
+Genera `dist/Pizarra-Windows-<versión>.zip` (unos 20 MB), con Python portátil y todas las librerías incluidas.
+
+## Desarrollo
 
 Instale las dependencias:
 
 ```bash
-cd backend && pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt
 ```
 
-Ejecute las pruebas. **¡Atención: borran por completo la base de datos indicada!**
+Ejecute las pruebas (cada una usa una base temporal):
 
 ```bash
-TEST_DATABASE_URL=postgresql://usuario:clave@localhost:5432/pizarra_test python -m pytest -q
+python -m pytest -q
 ```
 
-Para levantar la aplicación en modo desarrollo:
+Inicie el servidor. Los datos quedan en la carpeta `datos/`:
 
 ```bash
-DATABASE_URL=postgresql://usuario:clave@localhost:5432/pizarra ADJUNTOS_DIR=./adjuntos uvicorn app.main:app --reload
+python -m app.servidor
 ```
 
-La documentación de la API está en `/api/docs`.
+Abra `http://localhost:8080`. La documentación de la API está en `/api/docs`. Funciona igual en Linux.

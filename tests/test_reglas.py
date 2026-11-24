@@ -1,7 +1,11 @@
 """Pruebas de las reglas de control de fechas (R1–R10, L1–L2)."""
+import json
+import sqlite3
+import threading
+
 import pytest
 
-from app import servicios
+from app import db, servicios
 from app.validaciones import Bloqueado, ConflictoVersion, RequiereConfirmacion
 
 from .conftest import d
@@ -36,8 +40,7 @@ def test_r2_misma_persona(conn, datos):
 
 
 def test_r3_inactivo(conn, datos):
-    conn.execute("UPDATE personal SET activo = FALSE WHERE id = %s", (datos["juez2"],))
-    conn.commit()
+    conn.execute("UPDATE personal SET activo = 0 WHERE id = ?", (datos["juez2"],))
     with pytest.raises(Bloqueado) as e:
         inter(conn, datos, "juez1", "juez2", 0, 2)
     assert "R3" in reglas(e)
@@ -103,21 +106,26 @@ def test_r9_solo_entre_pares(conn, datos):
 
 
 def test_r9_tambien_lo_garantiza_la_base_de_datos(conn, datos):
-    import psycopg
-    with pytest.raises(psycopg.errors.RaiseException):
-        conn.execute("INSERT INTO interinatos (titular_id, interino_id, fecha_inicio, fecha_fin) "
-                     "VALUES (%s, %s, '2026-11-16', '2026-11-17')", (datos["juez1"], datos["ujier2"]))
-    conn.rollback()
+    with pytest.raises(sqlite3.IntegrityError, match="INT_PARES"):
+        conn.execute("INSERT INTO interinatos (titular_id, interino_id, cargo_codigo, fecha_inicio, fecha_fin) "
+                     "VALUES (?, ?, 'JUEZ', '2026-11-16', '2026-11-17')", (datos["juez1"], datos["ujier2"]))
 
 
-def test_exclusion_en_bd_aunque_se_saltee_el_backend(conn, datos):
-    import psycopg
-    q = ("INSERT INTO interinatos (titular_id, interino_id, fecha_inicio, fecha_fin) "
-         "VALUES (%s, %s, '2026-11-16', '2026-11-20')")
-    conn.execute(q, (datos["ujier1"], datos["ujier3"]))
-    with pytest.raises(psycopg.errors.ExclusionViolation):
-        conn.execute(q, (datos["ujier2"], datos["ujier3"]))
-    conn.rollback()
+def test_reglas_en_bd_aunque_se_saltee_el_backend(conn, datos):
+    q = ("INSERT INTO interinatos (titular_id, interino_id, cargo_codigo, fecha_inicio, fecha_fin) "
+         "VALUES (?, ?, ?, '2026-11-16', '2026-11-20')")
+    conn.execute(q, (datos["ujier1"], datos["ujier3"], "UJIER"))
+    with pytest.raises(sqlite3.IntegrityError, match="INT_INTERINO_UNICO"):
+        conn.execute(q, (datos["ujier2"], datos["ujier3"], "UJIER"))
+    with pytest.raises(sqlite3.IntegrityError, match="INT_TITULAR_UNICO"):
+        conn.execute(q, (datos["ujier1"], datos["ujier2"], "UJIER"))
+    conn.execute(q, (datos["juez1"], datos["juez3"], "JUEZ"))
+    conn.execute(q, (datos["juez2"], datos["juez3"], "JUEZ"))      # jueces: se permite acumular
+    lq = ("INSERT INTO licencias (personal_id, tipo_licencia_id, fecha_inicio, fecha_fin, organo_aprobador) "
+          "VALUES (?, 1, ?, ?, 'RRHH')")
+    conn.execute(lq, (datos["actuario1"], "2026-11-16", "2026-11-20"))
+    with pytest.raises(sqlite3.IntegrityError, match="LIC_SOLAPE"):
+        conn.execute(lq, (datos["actuario1"], "2026-11-20", "2026-11-25"))
 
 
 def test_r10_version_desactualizada(conn, datos):
@@ -142,7 +150,7 @@ def test_l2_licencia_del_interino_marca_conflicto_y_anular_lo_revierte(conn, dat
     iid, _ = inter(conn, datos, "ujier1", "ujier2", 0, 9)
     lid, avisos = lic(conn, datos, "ujier2", 5, 6)        # la licencia NO se bloquea
     assert [a.regla for a in avisos] == ["L2"]
-    estado = lambda: conn.execute("SELECT estado FROM interinatos WHERE id = %s", (iid,)).fetchone()["estado"]
+    estado = lambda: conn.execute("SELECT estado FROM interinatos WHERE id = ?", (iid,)).fetchone()["estado"]
     assert estado() == "EN_CONFLICTO"
     servicios.anular_licencia(conn, lid, "Cargada por error", 1, datos["uid"])
     assert estado() == "VIGENTE"
@@ -152,23 +160,58 @@ def test_editar_interinato_resuelve_conflicto(conn, datos):
     lic(conn, datos, "ujier1", 0, 9)
     iid, _ = inter(conn, datos, "ujier1", "ujier2", 0, 9)
     lic(conn, datos, "ujier2", 5, 6)
-    v = conn.execute("SELECT version FROM interinatos WHERE id = %s", (iid,)).fetchone()["version"]
+    v = conn.execute("SELECT version FROM interinatos WHERE id = ?", (iid,)).fetchone()["version"]
     servicios.editar_interinato(conn, iid, {"titular_id": datos["ujier1"], "interino_id": datos["ujier3"],
                                             "fecha_inicio": d(0), "fecha_fin": d(9)}, v, datos["uid"])
-    assert conn.execute("SELECT estado FROM interinatos WHERE id = %s", (iid,)).fetchone()["estado"] == "VIGENTE"
+    assert conn.execute("SELECT estado FROM interinatos WHERE id = ?", (iid,)).fetchone()["estado"] == "VIGENTE"
 
 
 def test_alertas_sin_cubrir(conn, datos):
     lid, _ = lic(conn, datos, "secretario1", 0, 4)        # lunes a viernes
     inter(conn, datos, "secretario1", "secretario2", 0, 1)
-    with conn.cursor() as cur:
-        a = servicios.alertas(cur, d(0))
+    a = servicios.alertas(conn, d(0))
     assert len(a["sin_cubrir"]) == 1
-    assert a["sin_cubrir"][0]["dias_sin_cubrir"] == 3 and a["sin_cubrir"][0]["primer_dia"] == d(2)
+    assert a["sin_cubrir"][0]["dias_sin_cubrir"] == 3 and a["sin_cubrir"][0]["primer_dia"] == d(2).isoformat()
 
 
 def test_auditoria_guarda_advertencias_confirmadas(conn, datos):
     iid, _ = inter(conn, datos, "juez1", "juez2", 0, 4, confirmar=True)
     r = conn.execute("SELECT advertencias_confirmadas FROM auditoria WHERE tabla = 'interinatos' "
-                     "AND registro_id = %s", (iid,)).fetchone()
-    assert r["advertencias_confirmadas"][0]["regla"] == "R8"
+                     "AND registro_id = ?", (iid,)).fetchone()
+    assert json.loads(r["advertencias_confirmadas"])[0]["regla"] == "R8"
+
+
+def test_dos_operadores_a_la_vez_no_generan_cruces(datos):
+    """Dos operadores asignan al mismo secretario, a la vez, para cubrir a dos titulares.
+    Solo uno debe poder guardar; el otro recibe el bloqueo R5."""
+    resultados, barrera = [], threading.Barrier(2)
+
+    def operador(titular):
+        c = db.conectar()
+        try:
+            barrera.wait()
+            servicios.crear_interinato(c, {"titular_id": datos[titular], "interino_id": datos["secretario3"],
+                                           "fecha_inicio": d(0), "fecha_fin": d(4)},
+                                       datos["uid"], confirmar_advertencias=True)
+            resultados.append("ok")
+        except Bloqueado as e:
+            resultados.append(e.hallazgos[0].regla)
+        finally:
+            c.close()
+
+    hilos = [threading.Thread(target=operador, args=(t,)) for t in ("secretario1", "secretario2")]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+    assert sorted(resultados) == ["R5", "ok"]
+
+
+def test_respaldo_y_restauracion(conn, datos, tmp_path):
+    from app import cli
+    lid, _ = lic(conn, datos, "juez1", 0, 4)
+    copia = cli.respaldo(str(tmp_path / "resp"))
+    servicios.anular_licencia(conn, lid, "Prueba de restauración", 1, datos["uid"])
+    assert conn.execute("SELECT estado FROM licencias WHERE id = ?", (lid,)).fetchone()["estado"] == "ANULADA"
+    cli.restaurar(str(copia))
+    assert conn.execute("SELECT estado FROM licencias WHERE id = ?", (lid,)).fetchone()["estado"] == "VIGENTE"

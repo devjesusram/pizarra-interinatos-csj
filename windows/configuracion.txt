@@ -1,0 +1,16 @@
+# Configuracion de la Pizarra de Interinatos
+# Despues de cambiar algo, reinicie la PC o ejecute 3-instalar-como-servicio.bat de nuevo.
+
+# Puerto: los companeros entran con http://IP-DE-ESTA-PC:8080
+PUERTO=8080
+
+NOMBRE_CIRCUNSCRIPCION=Circunscripción Judicial de Cordillera
+
+# Horas que dura una sesion antes de pedir de nuevo la contrasena
+SESION_HORAS=12
+
+# Dias que se guardan los respaldos automaticos
+DIAS_RESPALDO=30
+
+# Tamano maximo de cada adjunto (PDF o correo), en MB
+ADJUNTO_MAX_MB=15

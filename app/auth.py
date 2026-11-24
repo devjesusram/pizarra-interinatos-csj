@@ -33,22 +33,27 @@ def validar_clave_nueva(clave: str) -> None:
         raise HTTPException(400, "La contraseña debe tener al menos 8 caracteres.")
 
 
+def _utc(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def iniciar_sesion(conn, usuario: str, clave: str) -> str | None:
-    r = conn.execute("SELECT id, hash_clave FROM usuarios WHERE usuario = %s AND activo",
-                     (usuario.strip().lower(),)).fetchone()
+    r = db.uno(conn, "SELECT id, hash_clave FROM usuarios WHERE usuario = ? AND activo = 1",
+               (usuario.strip().lower(),))
     if not r or not verificar_clave(clave, r["hash_clave"]):
         return None
     token = secrets.token_urlsafe(32)
-    with conn.transaction():
-        conn.execute("DELETE FROM sesiones WHERE expira < now()")
-        conn.execute("INSERT INTO sesiones (token, usuario_id, expira) VALUES (%s, %s, %s)",
-                     (token, r["id"], datetime.now(timezone.utc) + timedelta(hours=config.SESION_HORAS)))
+    ahora = datetime.now(timezone.utc)
+    with db.escritura(conn):
+        conn.execute("DELETE FROM sesiones WHERE expira < ?", (_utc(ahora),))
+        conn.execute("INSERT INTO sesiones (token, usuario_id, expira) VALUES (?, ?, ?)",
+                     (token, r["id"], _utc(ahora + timedelta(hours=config.SESION_HORAS))))
     return token
 
 
 def cerrar_sesion(conn, token: str) -> None:
-    with conn.transaction():
-        conn.execute("DELETE FROM sesiones WHERE token = %s", (token,))
+    with db.escritura(conn):
+        conn.execute("DELETE FROM sesiones WHERE token = ?", (token,))
 
 
 def usuario_actual(request: Request) -> dict:
@@ -56,10 +61,10 @@ def usuario_actual(request: Request) -> dict:
     if not token:
         raise HTTPException(401, "Debe iniciar sesión.")
     with db.conexion() as conn:
-        u = conn.execute("""SELECT u.id, u.usuario, u.nombre, u.rol
+        u = db.uno(conn, """SELECT u.id, u.usuario, u.nombre, u.rol
                             FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id
-                            WHERE s.token = %s AND s.expira > now() AND u.activo""",
-                         (token,)).fetchone()
+                            WHERE s.token = ? AND s.expira > ? AND u.activo = 1""",
+                   (token, _utc(datetime.now(timezone.utc))))
     if not u:
         raise HTTPException(401, "La sesión expiró. Vuelva a iniciar sesión.")
     return u

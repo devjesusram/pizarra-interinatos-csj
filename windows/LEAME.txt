@@ -1,0 +1,41 @@
+PIZARRA DE INTERINATOS Y LICENCIAS - Version para Windows
+=========================================================
+
+No necesita internet ni instalar nada. Todo esta en esta carpeta.
+
+INSTALACION (en la PC que hace de servidor)
+-------------------------------------------
+1. Copie la carpeta "Pizarra" a C:\  (debe quedar C:\Pizarra).
+   No la ponga dentro de "Archivos de programa" ni en el Escritorio.
+
+2. Doble clic en  1-crear-administrador.bat
+   Escriba un usuario (por ejemplo: admin), su nombre y una contrasena.
+
+3. (Opcional) Doble clic en  2-probar-en-esta-ventana.bat
+   Se abre el navegador con la Pizarra. Funciona mientras la ventana negra
+   este abierta. Cierrela al terminar de probar.
+
+4. Clic derecho en  3-instalar-como-servicio.bat  ->  "Ejecutar como administrador"
+   Desde ahora la Pizarra se inicia sola al encender la PC (aunque nadie
+   inicie sesion), se hace un respaldo cada noche a las 23:30 y se abre el
+   puerto 8080 en el firewall.
+
+5. Los companeros entran desde su navegador con:
+      http://IP-DE-ESTA-PC:8080      (por ejemplo http://172.31.60.254:8080)
+
+OTROS ARCHIVOS
+--------------
+respaldo-ahora.bat ........... hace un respaldo en la carpeta "respaldos"
+restaurar-respaldo.bat ....... vuelve a un respaldo (como administrador)
+cargar-datos-de-ejemplo.bat .. datos ficticios para practicar
+desinstalar-servicio.bat ..... quita el inicio automatico (no borra datos)
+configuracion.txt ............ puerto y otras opciones
+
+DONDE QUEDAN LOS DATOS
+----------------------
+datos\pizarra.db ............. la base de datos (todo lo cargado)
+datos\adjuntos\ .............. PDF y correos adjuntos
+datos\registros\pizarra.log .. registro de funcionamiento y errores
+respaldos\ ................... respaldos (copielos a otro equipo seguido)
+
+Guia completa: INSTALACION-WINDOWS.md

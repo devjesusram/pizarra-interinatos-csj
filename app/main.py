@@ -1,5 +1,7 @@
 """API y servidor web de la Pizarra digital de interinatos y licencias."""
+import json
 import re
+import sqlite3
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -13,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import auth, config, db, ics, servicios
 from .auth import requiere_admin, usuario_actual
+from .db import booleanos, escritura, iso, todos, uno
 from .validaciones import Bloqueado, ConflictoVersion, RequiereConfirmacion, validar_interinato
 
 STATIC = Path(__file__).parent / "static"
@@ -21,12 +24,9 @@ EXT_ADJUNTOS = {".pdf", ".eml", ".msg", ".png", ".jpg", ".jpeg", ".txt", ".docx"
 
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI):
-    db.abrir()
-    with db.conexion() as conn:
-        db.inicializar_esquema(conn)
+    db.inicializar_esquema()
     config.ADJUNTOS_DIR.mkdir(parents=True, exist_ok=True)
     yield
-    db.cerrar()
 
 
 app = FastAPI(title="Pizarra de Interinatos y Licencias", lifespan=ciclo_de_vida,
@@ -175,11 +175,11 @@ def yo(u=Depends(usuario_actual)):
 def cambiar_mi_clave(body: ClaveIn, u=Depends(usuario_actual)):
     auth.validar_clave_nueva(body.clave_nueva)
     with db.conexion() as conn:
-        r = conn.execute("SELECT hash_clave FROM usuarios WHERE id = %s", (u["id"],)).fetchone()
+        r = uno(conn, "SELECT hash_clave FROM usuarios WHERE id = ?", (u["id"],))
         if not auth.verificar_clave(body.clave_actual or "", r["hash_clave"]):
             raise HTTPException(400, "La contraseña actual no es correcta.")
-        with conn.transaction():
-            conn.execute("UPDATE usuarios SET hash_clave = %s WHERE id = %s",
+        with escritura(conn):
+            conn.execute("UPDATE usuarios SET hash_clave = ? WHERE id = ?",
                          (auth.hash_clave(body.clave_nueva), u["id"]))
     return {"ok": True}
 
@@ -190,10 +190,9 @@ def cambiar_mi_clave(body: ClaveIn, u=Depends(usuario_actual)):
 def catalogos(u=Depends(usuario_actual)):
     with db.conexion() as conn:
         return {
-            "cargos": conn.execute("SELECT * FROM cargos ORDER BY orden_pizarra").fetchall(),
-            "tipos_licencia": conn.execute(
-                "SELECT * FROM tipos_licencia WHERE activo ORDER BY nombre").fetchall(),
-            "despachos": conn.execute("SELECT * FROM despachos ORDER BY localidad, nombre").fetchall(),
+            "cargos": todos(conn, "SELECT * FROM cargos ORDER BY orden_pizarra"),
+            "tipos_licencia": booleanos(todos(conn, "SELECT * FROM tipos_licencia WHERE activo = 1 ORDER BY nombre"), "activo"),
+            "despachos": booleanos(todos(conn, "SELECT * FROM despachos ORDER BY localidad, nombre"), "activo"),
         }
 
 
@@ -207,81 +206,81 @@ SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id,
 @app.get("/api/personal")
 def listar_personal(u=Depends(usuario_actual)):
     with db.conexion() as conn:
-        return conn.execute(SQL_PERSONAL + " ORDER BY c.orden_pizarra, p.nombre_completo").fetchall()
+        return booleanos(todos(conn, SQL_PERSONAL + " ORDER BY c.orden_pizarra, p.nombre_completo"), "activo")
 
 
-def _guardar(conn, sql, params, tabla, accion, uid):
+def _guardar(conn, sql, params, tabla, accion, uid, registro_id=None):
+    """Alta o modificación simple con auditoría. Devuelve {"id": ...}."""
     try:
-        with conn.transaction():
-            r = conn.execute(sql, params).fetchone()
-            if not r:
+        with escritura(conn):
+            cur = conn.execute(sql, params)
+            if cur.rowcount == 0:
                 raise LookupError("Registro inexistente")
-            servicios.auditar(conn.cursor(), tabla, r["id"], accion,
-                              {k: v for k, v in params.items() if k != "h"}, uid)
-            return r
-    except Exception as e:  # unicidad, claves foráneas, etc.
-        import psycopg
-        if isinstance(e, psycopg.errors.UniqueViolation):
+            rid = registro_id or cur.lastrowid
+            servicios.auditar(conn, tabla, rid, accion, {k: v for k, v in params.items() if k != "h"}, uid)
+            return {"id": rid}
+    except sqlite3.IntegrityError as e:
+        if "UNIQUE" in str(e):
             raise HTTPException(409, "Ya existe un registro con esos datos.")
-        if isinstance(e, psycopg.errors.IntegrityError):
-            raise HTTPException(400, "Datos inválidos: " + (e.diag.message_primary or ""))
-        raise
+        raise HTTPException(400, f"Datos inválidos: {e}")
+
+
+def _bool01(d: dict) -> dict:
+    return {k: (int(v) if isinstance(v, bool) else v) for k, v in d.items()}
 
 
 @app.post("/api/personal", status_code=201)
 def crear_personal(body: PersonalIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
         return _guardar(conn, """INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id, email, activo)
-                                 VALUES (%(nombre_completo)s, %(cargo_codigo)s, %(despacho_id)s, %(email)s, %(activo)s)
-                                 RETURNING id""", body.model_dump(), "personal", "CREAR", u["id"])
+                                 VALUES (:nombre_completo, :cargo_codigo, :despacho_id, :email, :activo)""",
+                        _bool01(body.model_dump()), "personal", "CREAR", u["id"])
 
 
 @app.put("/api/personal/{pid}")
 def editar_personal(pid: int, body: PersonalIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return _guardar(conn, """UPDATE personal SET nombre_completo = %(nombre_completo)s,
-                                   cargo_codigo = %(cargo_codigo)s, despacho_id = %(despacho_id)s,
-                                   email = %(email)s, activo = %(activo)s
-                                 WHERE id = %(id)s RETURNING id""",
-                        {**body.model_dump(), "id": pid}, "personal", "MODIFICAR", u["id"])
+        return _guardar(conn, """UPDATE personal SET nombre_completo = :nombre_completo,
+                                   cargo_codigo = :cargo_codigo, despacho_id = :despacho_id,
+                                   email = :email, activo = :activo WHERE id = :id""",
+                        _bool01({**body.model_dump(), "id": pid}), "personal", "MODIFICAR", u["id"], pid)
 
 
 @app.post("/api/despachos", status_code=201)
 def crear_despacho(body: DespachoIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
         return _guardar(conn, """INSERT INTO despachos (nombre, fuero, localidad, activo)
-                                 VALUES (%(nombre)s, %(fuero)s, %(localidad)s, %(activo)s) RETURNING id""",
-                        body.model_dump(), "despachos", "CREAR", u["id"])
+                                 VALUES (:nombre, :fuero, :localidad, :activo)""",
+                        _bool01(body.model_dump()), "despachos", "CREAR", u["id"])
 
 
 @app.put("/api/despachos/{did}")
 def editar_despacho(did: int, body: DespachoIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return _guardar(conn, """UPDATE despachos SET nombre = %(nombre)s, fuero = %(fuero)s,
-                                   localidad = %(localidad)s, activo = %(activo)s
-                                 WHERE id = %(id)s RETURNING id""",
-                        {**body.model_dump(), "id": did}, "despachos", "MODIFICAR", u["id"])
+        return _guardar(conn, """UPDATE despachos SET nombre = :nombre, fuero = :fuero,
+                                   localidad = :localidad, activo = :activo WHERE id = :id""",
+                        _bool01({**body.model_dump(), "id": did}), "despachos", "MODIFICAR", u["id"], did)
 
 
 @app.get("/api/dias-inhabiles")
 def listar_inhabiles(u=Depends(usuario_actual)):
     with db.conexion() as conn:
-        return conn.execute("SELECT * FROM dias_inhabiles ORDER BY fecha").fetchall()
+        return todos(conn, "SELECT * FROM dias_inhabiles ORDER BY fecha")
 
 
 @app.post("/api/dias-inhabiles", status_code=201)
 def crear_inhabil(body: DiaInhabilIn, u=Depends(requiere_admin)):
-    with db.conexion() as conn, conn.transaction():
-        conn.execute("""INSERT INTO dias_inhabiles (fecha, descripcion) VALUES (%s, %s)
-                        ON CONFLICT (fecha) DO UPDATE SET descripcion = EXCLUDED.descripcion""",
-                     (body.fecha, body.descripcion))
+    with db.conexion() as conn, escritura(conn):
+        conn.execute("""INSERT INTO dias_inhabiles (fecha, descripcion) VALUES (?, ?)
+                        ON CONFLICT (fecha) DO UPDATE SET descripcion = excluded.descripcion""",
+                     (iso(body.fecha), body.descripcion))
     return {"ok": True}
 
 
 @app.delete("/api/dias-inhabiles/{fecha}")
 def borrar_inhabil(fecha: date, u=Depends(requiere_admin)):
-    with db.conexion() as conn, conn.transaction():
-        conn.execute("DELETE FROM dias_inhabiles WHERE fecha = %s", (fecha,))
+    with db.conexion() as conn, escritura(conn):
+        conn.execute("DELETE FROM dias_inhabiles WHERE fecha = ?", (iso(fecha),))
     return {"ok": True}
 
 
@@ -290,18 +289,18 @@ def borrar_inhabil(fecha: date, u=Depends(requiere_admin)):
 @app.get("/api/usuarios")
 def listar_usuarios(u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return conn.execute("SELECT id, usuario, nombre, rol, activo, creado_en FROM usuarios "
-                            "ORDER BY nombre").fetchall()
+        return booleanos(todos(conn, "SELECT id, usuario, nombre, rol, activo, creado_en FROM usuarios "
+                                     "ORDER BY nombre"), "activo")
 
 
 @app.post("/api/usuarios", status_code=201)
 def crear_usuario(body: UsuarioIn, u=Depends(requiere_admin)):
     auth.validar_clave_nueva(body.clave)
-    datos = body.model_dump(exclude={"clave"})
+    datos = _bool01(body.model_dump(exclude={"clave"}))
     datos["usuario"] = datos["usuario"].strip().lower()
     with db.conexion() as conn:
         return _guardar(conn, """INSERT INTO usuarios (usuario, nombre, rol, activo, hash_clave)
-                                 VALUES (%(usuario)s, %(nombre)s, %(rol)s, %(activo)s, %(h)s) RETURNING id""",
+                                 VALUES (:usuario, :nombre, :rol, :activo, :h)""",
                         {**datos, "h": auth.hash_clave(body.clave)}, "usuarios", "CREAR", u["id"])
 
 
@@ -309,30 +308,32 @@ def crear_usuario(body: UsuarioIn, u=Depends(requiere_admin)):
 def editar_usuario(uid: int, body: UsuarioIn, u=Depends(requiere_admin)):
     if uid == u["id"] and (body.rol != "ADMIN" or not body.activo):
         raise HTTPException(400, "No puede quitarse a sí mismo el rol de administrador ni desactivarse.")
-    datos = body.model_dump(exclude={"clave"})
+    if body.clave:
+        auth.validar_clave_nueva(body.clave)
+    datos = _bool01(body.model_dump(exclude={"clave"}))
     datos["usuario"] = datos["usuario"].strip().lower()
     with db.conexion() as conn:
-        r = _guardar(conn, """UPDATE usuarios SET usuario = %(usuario)s, nombre = %(nombre)s,
-                                rol = %(rol)s, activo = %(activo)s WHERE id = %(id)s RETURNING id""",
-                     {**datos, "id": uid}, "usuarios", "MODIFICAR", u["id"])
-        if body.clave:
-            auth.validar_clave_nueva(body.clave)
-            with conn.transaction():
-                conn.execute("UPDATE usuarios SET hash_clave = %s WHERE id = %s",
-                             (auth.hash_clave(body.clave), uid))
-                conn.execute("DELETE FROM sesiones WHERE usuario_id = %s", (uid,))
-        if not body.activo:
-            with conn.transaction():
-                conn.execute("DELETE FROM sesiones WHERE usuario_id = %s", (uid,))
+        r = _guardar(conn, """UPDATE usuarios SET usuario = :usuario, nombre = :nombre,
+                                rol = :rol, activo = :activo WHERE id = :id""",
+                     {**datos, "id": uid}, "usuarios", "MODIFICAR", u["id"], uid)
+        with escritura(conn):
+            if body.clave:
+                conn.execute("UPDATE usuarios SET hash_clave = ? WHERE id = ?", (auth.hash_clave(body.clave), uid))
+            if body.clave or not body.activo:
+                conn.execute("DELETE FROM sesiones WHERE usuario_id = ?", (uid,))
         return r
 
 
 @app.get("/api/auditoria")
 def ver_auditoria(limite: int = Query(200, le=1000), u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return conn.execute("""SELECT a.*, u.nombre AS usuario FROM auditoria a
+        filas = todos(conn, """SELECT a.*, u.nombre AS usuario FROM auditoria a
                                LEFT JOIN usuarios u ON u.id = a.usuario_id
-                               ORDER BY a.ts DESC LIMIT %s""", (limite,)).fetchall()
+                               ORDER BY a.id DESC LIMIT ?""", (limite,))
+    for f in filas:
+        f["datos"] = json.loads(f["datos"])
+        f["advertencias_confirmadas"] = json.loads(f["advertencias_confirmadas"]) if f["advertencias_confirmadas"] else None
+    return filas
 
 
 # ── Pizarra ────────────────────────────────────────────────────────────
@@ -347,16 +348,16 @@ def _rango(desde: date, hasta: date):
 @app.get("/api/pizarra")
 def pizarra(desde: date, hasta: date, u=Depends(usuario_actual)):
     _rango(desde, hasta)
-    p = {"desde": desde, "hasta": hasta}
+    p = {"desde": iso(desde), "hasta": iso(hasta)}
     with db.conexion() as conn:
-        personal = conn.execute(SQL_PERSONAL + " WHERE p.activo ORDER BY c.orden_pizarra, p.nombre_completo").fetchall()
-        licencias = conn.execute("""
+        personal = booleanos(todos(conn, SQL_PERSONAL + " WHERE p.activo = 1 ORDER BY c.orden_pizarra, p.nombre_completo"), "activo")
+        licencias = booleanos(todos(conn, """
             SELECT l.id, l.personal_id, l.tipo_licencia_id, t.nombre AS tipo, l.fecha_inicio, l.fecha_fin,
                    l.organo_aprobador, l.nro_resolucion, l.adjunto_nombre IS NOT NULL AS tiene_adjunto,
                    l.version
             FROM licencias l JOIN tipos_licencia t ON t.id = l.tipo_licencia_id
-            WHERE l.estado = 'VIGENTE' AND l.periodo && daterange(%(desde)s, %(hasta)s, '[]')""", p).fetchall()
-        interinatos = conn.execute("""
+            WHERE l.estado = 'VIGENTE' AND l.fecha_inicio <= :hasta AND l.fecha_fin >= :desde""", p), "tiene_adjunto")
+        interinatos = todos(conn, """
             SELECT i.id, i.titular_id, i.interino_id, i.licencia_id, i.fecha_inicio, i.fecha_fin,
                    i.estado, i.version, t.nombre_completo AS titular, x.nombre_completo AS interino,
                    dt.nombre AS despacho_titular
@@ -364,17 +365,16 @@ def pizarra(desde: date, hasta: date, u=Depends(usuario_actual)):
             JOIN personal t ON t.id = i.titular_id
             JOIN personal x ON x.id = i.interino_id
             JOIN despachos dt ON dt.id = t.despacho_id
-            WHERE i.estado <> 'ANULADO' AND i.periodo && daterange(%(desde)s, %(hasta)s, '[]')""", p).fetchall()
-        inhabiles = conn.execute("SELECT fecha, descripcion FROM dias_inhabiles WHERE fecha BETWEEN %(desde)s AND %(hasta)s",
-                                 p).fetchall()
+            WHERE i.estado <> 'ANULADO' AND i.fecha_inicio <= :hasta AND i.fecha_fin >= :desde""", p)
+        inhabiles = todos(conn, "SELECT fecha, descripcion FROM dias_inhabiles WHERE fecha BETWEEN :desde AND :hasta", p)
     return {"desde": desde, "hasta": hasta, "hoy": hoy(), "personal": personal,
             "licencias": licencias, "interinatos": interinatos, "inhabiles": inhabiles}
 
 
 @app.get("/api/alertas")
 def ver_alertas(u=Depends(usuario_actual)):
-    with db.conexion() as conn, conn.cursor() as cur:
-        return servicios.alertas(cur, hoy())
+    with db.conexion() as conn:
+        return servicios.alertas(conn, hoy())
 
 
 @app.get("/api/disponibilidad")
@@ -382,16 +382,14 @@ def disponibilidad(titular_id: int, desde: date, hasta: date, excluir_id: Option
                    u=Depends(usuario_actual)):
     """Candidatos del mismo cargo, con su estado según las mismas reglas que al guardar."""
     _rango(desde, hasta)
-    with db.conexion() as conn, conn.cursor() as cur:
-        cur.execute(SQL_PERSONAL + " WHERE p.id = %s", (titular_id,))
-        tit = cur.fetchone()
+    with db.conexion() as conn:
+        tit = uno(conn, SQL_PERSONAL + " WHERE p.id = ?", (titular_id,))
         if not tit:
             raise HTTPException(404, "Titular inexistente")
-        cur.execute(SQL_PERSONAL + " WHERE p.activo AND p.cargo_codigo = %s AND p.id <> %s",
-                    (tit["cargo_codigo"], titular_id))
         candidatos = []
-        for c in cur.fetchall():
-            hall = validar_interinato(cur, titular_id, c["id"], desde, hasta, excluir_id)
+        for c in todos(conn, SQL_PERSONAL + " WHERE p.activo = 1 AND p.cargo_codigo = ? AND p.id <> ?",
+                       (tit["cargo_codigo"], titular_id)):
+            hall = validar_interinato(conn, titular_id, c["id"], desde, hasta, excluir_id)
             # R6 y R8 dependen del titular, no del candidato: se informan aparte
             propios = [h for h in hall if h.regla not in ("R6", "R8")]
             if any(h.nivel.value == "BLOQUEO" for h in propios):
@@ -406,12 +404,11 @@ def disponibilidad(titular_id: int, desde: date, hasta: date, excluir_id: Option
         orden = {"DISPONIBLE": 0, "AVISO": 1, "BLOQUEADO": 2}
         candidatos.sort(key=lambda c: (orden[c["estado"]], c["localidad"] != tit["localidad"],
                                        c["nombre_completo"]))
-        # Hallazgos del titular (independientes del candidato)
         generales = []
         if candidatos:
-            hall = validar_interinato(cur, titular_id, candidatos[0]["id"], desde, hasta, excluir_id)
+            hall = validar_interinato(conn, titular_id, candidatos[0]["id"], desde, hasta, excluir_id)
             generales = [h.a_dict() for h in hall if h.regla in ("R6", "R8")]
-    return {"titular": tit, "candidatos": candidatos, "generales": generales}
+    return {"titular": booleanos(tit, "activo"), "candidatos": candidatos, "generales": generales}
 
 
 # ── Licencias ──────────────────────────────────────────────────────────
@@ -422,23 +419,22 @@ SQL_LICENCIA = """SELECT l.*, t.nombre AS tipo, p.nombre_completo, p.cargo_codig
                   JOIN personal p ON p.id = l.personal_id JOIN despachos d ON d.id = p.despacho_id
                   LEFT JOIN usuarios uc ON uc.id = l.creado_por
                   LEFT JOIN usuarios um ON um.id = l.modificado_por
-                  WHERE l.id = %s"""
+                  WHERE l.id = ?"""
 
 
 @app.get("/api/licencias/{lid}")
 def ver_licencia(lid: int, u=Depends(usuario_actual)):
     with db.conexion() as conn:
-        r = conn.execute(SQL_LICENCIA, (lid,)).fetchone()
+        r = uno(conn, SQL_LICENCIA, (lid,))
         if not r:
             raise HTTPException(404, "Licencia inexistente")
         r.pop("adjunto_ruta", None)
-        r.pop("periodo", None)
-        r["interinatos"] = conn.execute("""
+        r["interinatos"] = todos(conn, """
             SELECT i.id, i.fecha_inicio, i.fecha_fin, i.estado, x.nombre_completo AS interino
             FROM interinatos i JOIN personal x ON x.id = i.interino_id
-            WHERE i.titular_id = %s AND i.estado <> 'ANULADO'
-              AND i.periodo && daterange(%s, %s, '[]') ORDER BY i.fecha_inicio""",
-            (r["personal_id"], r["fecha_inicio"], r["fecha_fin"])).fetchall()
+            WHERE i.titular_id = ? AND i.estado <> 'ANULADO'
+              AND i.fecha_inicio <= ? AND i.fecha_fin >= ? ORDER BY i.fecha_inicio""",
+            (r["personal_id"], r["fecha_fin"], r["fecha_inicio"]))
         return r
 
 
@@ -475,6 +471,7 @@ async def subir_adjunto(lid: int, archivo: UploadFile = File(...), u=Depends(usu
     if len(contenido) > config.ADJUNTO_MAX_MB * 1024 * 1024:
         raise HTTPException(400, f"El archivo supera {config.ADJUNTO_MAX_MB} MB.")
     ruta = f"{uuid.uuid4().hex}{ext}"
+    config.ADJUNTOS_DIR.mkdir(parents=True, exist_ok=True)
     (config.ADJUNTOS_DIR / ruta).write_bytes(contenido)
     with db.conexion() as conn:
         servicios.guardar_adjunto(conn, lid, nombre, ruta, u["id"])
@@ -484,7 +481,7 @@ async def subir_adjunto(lid: int, archivo: UploadFile = File(...), u=Depends(usu
 @app.get("/api/licencias/{lid}/adjunto")
 def bajar_adjunto(lid: int, u=Depends(usuario_actual)):
     with db.conexion() as conn:
-        r = conn.execute("SELECT adjunto_nombre, adjunto_ruta FROM licencias WHERE id = %s", (lid,)).fetchone()
+        r = uno(conn, "SELECT adjunto_nombre, adjunto_ruta FROM licencias WHERE id = ?", (lid,))
     if not r or not r["adjunto_ruta"]:
         raise HTTPException(404, "La licencia no tiene adjunto.")
     ruta = config.ADJUNTOS_DIR / Path(r["adjunto_ruta"]).name
@@ -498,7 +495,7 @@ def bajar_adjunto(lid: int, u=Depends(usuario_actual)):
 @app.get("/api/interinatos/{iid}")
 def ver_interinato(iid: int, u=Depends(usuario_actual)):
     with db.conexion() as conn:
-        r = conn.execute("""
+        r = uno(conn, """
             SELECT i.*, t.nombre_completo AS titular, x.nombre_completo AS interino,
                    dt.nombre AS despacho_titular, dx.nombre AS despacho_interino, c.nombre AS cargo,
                    uc.nombre AS creado_por_nombre, um.nombre AS modificado_por_nombre
@@ -508,10 +505,9 @@ def ver_interinato(iid: int, u=Depends(usuario_actual)):
             JOIN cargos c ON c.codigo = i.cargo_codigo
             LEFT JOIN usuarios uc ON uc.id = i.creado_por
             LEFT JOIN usuarios um ON um.id = i.modificado_por
-            WHERE i.id = %s""", (iid,)).fetchone()
+            WHERE i.id = ?""", (iid,))
     if not r:
         raise HTTPException(404, "Interinato inexistente")
-    r.pop("periodo", None)
     return r
 
 
@@ -550,14 +546,14 @@ def _ics_respuesta(contenido: bytes, nombre: str):
 @app.get("/api/exportar.ics")
 def exportar_ics(desde: date, hasta: date, personal_id: Optional[int] = None, u=Depends(usuario_actual)):
     _rango(desde, hasta)
-    with db.conexion() as conn, conn.cursor() as cur:
+    with db.conexion() as conn:
         nombre = config.NOMBRE_CIRCUNSCRIPCION
         if personal_id:
-            r = conn.execute("SELECT nombre_completo FROM personal WHERE id = %s", (personal_id,)).fetchone()
+            r = uno(conn, "SELECT nombre_completo FROM personal WHERE id = ?", (personal_id,))
             if not r:
                 raise HTTPException(404, "Funcionario inexistente")
             nombre = r["nombre_completo"]
-        contenido = ics.generar(cur, desde, hasta, personal_id, nombre)
+        contenido = ics.generar(conn, desde, hasta, personal_id, nombre)
     return _ics_respuesta(contenido, f"pizarra_{desde}_{hasta}.ics")
 
 
@@ -565,18 +561,15 @@ def exportar_ics(desde: date, hasta: date, personal_id: Optional[int] = None, u=
 def feed_ics(token: str):
     """Feed de suscripción (sin inicio de sesión: el token largo es la llave)."""
     d, h = hoy() - timedelta(days=90), hoy() + timedelta(days=365)
-    with db.conexion() as conn, conn.cursor() as cur:
+    with db.conexion() as conn:
         if config.ICS_TOKEN_GENERAL and token == config.ICS_TOKEN_GENERAL:
-            return _ics_respuesta(ics.generar(cur, d, h, None, config.NOMBRE_CIRCUNSCRIPCION), "pizarra.ics")
-        try:
-            uuid.UUID(token)
-        except ValueError:
+            return _ics_respuesta(ics.generar(conn, d, h, None, config.NOMBRE_CIRCUNSCRIPCION), "pizarra.ics")
+        if not re.fullmatch(r"[0-9a-f]{32}", token):
             raise HTTPException(404)
-        r = conn.execute("SELECT id, nombre_completo FROM personal WHERE ics_token = %s AND activo",
-                         (token,)).fetchone()
+        r = uno(conn, "SELECT id, nombre_completo FROM personal WHERE ics_token = ? AND activo = 1", (token,))
         if not r:
             raise HTTPException(404)
-        return _ics_respuesta(ics.generar(cur, d, h, r["id"], r["nombre_completo"]), "mi_calendario.ics")
+        return _ics_respuesta(ics.generar(conn, d, h, r["id"], r["nombre_completo"]), "mi_calendario.ics")
 
 
 # ── Páginas ────────────────────────────────────────────────────────────
@@ -602,7 +595,7 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.middleware("http")
-async def sin_cache_api(request: Request, call_next):
+async def cabeceras(request: Request, call_next):
     resp = await call_next(request)
     if request.url.path.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store"

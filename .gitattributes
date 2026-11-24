@@ -1,7 +1,9 @@
-# Los scripts deben tener finales de línea de Linux (LF), aunque se clonen en Windows
-*.sh text eol=lf
+# Archivos de Windows con finales de línea de Windows (CRLF); el resto con LF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
 *.py text eol=lf
 *.sql text eol=lf
-docker-compose.yml text eol=lf
-Dockerfile text eol=lf
-.env.example text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf

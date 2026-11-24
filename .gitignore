@@ -1,8 +1,7 @@
-.env
 __pycache__/
 *.pyc
 .pytest_cache/
-paquete-offline/
+datos/
 respaldos/
-*.tar
-*.tar.gz
+dist/
+build/

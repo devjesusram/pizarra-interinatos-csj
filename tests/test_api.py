@@ -82,7 +82,7 @@ def test_ics_dtend_exclusivo(cliente, datos, conn):
     assert "BEGIN:VEVENT" in texto
     assert "DTSTART;VALUE=DATE:20261116" in texto
     assert "DTEND;VALUE=DATE:20261121" in texto                   # fin 20/11 inclusivo -> 21 exclusivo
-    token = conn.execute("SELECT ics_token FROM personal WHERE id = %s", (datos["juez1"],)).fetchone()["ics_token"]
+    token = conn.execute("SELECT ics_token FROM personal WHERE id = ?", (datos["juez1"],)).fetchone()["ics_token"]
     assert cliente.get(f"/ics/{token}.ics").status_code == 200
     assert cliente.get("/ics/no-existe.ics").status_code == 404
 
