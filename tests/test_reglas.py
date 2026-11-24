@@ -54,10 +54,10 @@ def test_r4_interino_de_licencia(conn, datos):
     assert "de licencia" in e.value.hallazgos[0].mensaje
 
 
-def test_r5_no_juez_no_puede_cubrir_dos(conn, datos):
-    inter(conn, datos, "secretario1", "secretario3", 0, 4)
+def test_r5_ujier_no_puede_cubrir_dos(conn, datos):
+    inter(conn, datos, "ujier1", "ujier3", 0, 4)
     with pytest.raises(Bloqueado) as e:
-        inter(conn, datos, "secretario2", "secretario3", 4, 8)
+        inter(conn, datos, "ujier2", "ujier3", 4, 8)
     assert reglas(e) == {"R5"}
 
 
@@ -183,14 +183,14 @@ def test_auditoria_guarda_advertencias_confirmadas(conn, datos):
 
 def test_dos_operadores_a_la_vez_no_generan_cruces(datos):
     """Dos operadores asignan al mismo secretario, a la vez, para cubrir a dos titulares.
-    Solo uno debe poder guardar; el otro recibe el bloqueo R5."""
+    Solo uno debe poder guardar; el otro recibe el bloqueo R5 (ujier: tope 1)."""
     resultados, barrera = [], threading.Barrier(2)
 
     def operador(titular):
         c = db.conectar()
         try:
             barrera.wait()
-            servicios.crear_interinato(c, {"titular_id": datos[titular], "interino_id": datos["secretario3"],
+            servicios.crear_interinato(c, {"titular_id": datos[titular], "interino_id": datos["ujier3"],
                                            "fecha_inicio": d(0), "fecha_fin": d(4)},
                                        datos["uid"], confirmar_advertencias=True)
             resultados.append("ok")
@@ -199,7 +199,7 @@ def test_dos_operadores_a_la_vez_no_generan_cruces(datos):
         finally:
             c.close()
 
-    hilos = [threading.Thread(target=operador, args=(t,)) for t in ("secretario1", "secretario2")]
+    hilos = [threading.Thread(target=operador, args=(t,)) for t in ("ujier1", "ujier2")]
     for h in hilos:
         h.start()
     for h in hilos:
@@ -241,7 +241,66 @@ def test_dos_secretarias_del_mismo_juzgado(conn, datos):
             (despacho["despacho_id"],)).lastrowid
     lic(conn, datos, "secretario1", 0, 4)
     inter(conn, datos, "secretario1", "secretaria1b", 0, 4, confirmar=False)
-    # Pero mientras cubre a su compañera, no puede cubrir además a otra secretaria
+    # Además puede cubrir a otra secretaria al mismo tiempo (secretarios: sin límite)
+    _, infos = inter(conn, datos, "secretario2", "secretaria1b", 2, 3)
+    assert "2 despachos" in infos[0].mensaje
+
+
+def test_actuario_y_secretario_cubren_mas_de_tres_a_la_vez(conn, datos):
+    with db.escritura(conn):
+        for n in (4, 5):
+            did = conn.execute("INSERT INTO despachos (nombre, fuero, localidad) VALUES (?, 'Civil', 'Caacupé')",
+                               (f"J{n}",)).lastrowid
+            for c in ("ACTUARIO", "SECRETARIO"):
+                datos[f"{c.lower()}{n}"] = conn.execute(
+                    "INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES (?, ?, ?)",
+                    (f"{c.title()} {n}", c, did)).lastrowid
+    for cargo in ("actuario", "secretario"):
+        for titular in (1, 2, 3, 4):
+            _, infos = inter(conn, datos, f"{cargo}{titular}", f"{cargo}5", 0, 9)
+        assert "4 despachos" in infos[0].mensaje
+
+
+def test_tope_configurable_por_cargo(conn, datos):
+    conn.execute("UPDATE cargos SET max_interinatos_simultaneos = 2 WHERE codigo = 'SECRETARIO'")
+    inter(conn, datos, "secretario1", "secretario3", 0, 4)
+    inter(conn, datos, "secretario2", "secretario3", 0, 4)
+    with db.escritura(conn):
+        did = conn.execute("INSERT INTO despachos (nombre, fuero, localidad) VALUES ('J9', 'Civil', 'Caacupé')").lastrowid
+        datos["secretario9"] = conn.execute("INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) "
+                                            "VALUES ('Secretario 9', 'SECRETARIO', ?)", (did,)).lastrowid
     with pytest.raises(Bloqueado) as e:
-        inter(conn, datos, "secretario2", "secretaria1b", 2, 3)
+        inter(conn, datos, "secretario9", "secretario3", 1, 2)       # sería el tercero
     assert reglas(e) == {"R5"}
+    assert servicios.excesos_de_tope(conn, "SECRETARIO", 1, d(0))    # no se puede bajar a 1
+
+
+def test_actualiza_una_base_version_1_sin_perder_datos(tmp_path, monkeypatch):
+    """Simula la base que ya está en uso (versión 1) y la actualiza."""
+    from pathlib import Path
+    from app import config
+    vieja = tmp_path / "vieja.db"
+    monkeypatch.setattr(config, "DB_PATH", vieja)
+    c = db.conectar()
+    c.executescript("BEGIN;" + (Path(db.__file__).parent / "esquema.sql").read_text(encoding="utf-8") + "COMMIT;")
+    c.execute("INSERT INTO usuarios (usuario, nombre, rol, hash_clave) VALUES ('admin', 'Admin', 'ADMIN', 'x')")
+    did = c.execute("INSERT INTO despachos (nombre, fuero, localidad) VALUES ('Juzgado A', 'Civil', 'Caacupé')").lastrowid
+    s1 = c.execute("INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES ('S1', 'SECRETARIO', ?)", (did,)).lastrowid
+    s2 = c.execute("INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES ('S2', 'SECRETARIO', ?)", (did,)).lastrowid
+    s3 = c.execute("INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES ('S3', 'SECRETARIO', ?)", (did,)).lastrowid
+    q = ("INSERT INTO interinatos (titular_id, interino_id, cargo_codigo, fecha_inicio, fecha_fin) "
+         "VALUES (?, ?, 'SECRETARIO', '2026-11-16', '2026-11-20')")
+    c.execute(q, (s1, s3))
+    with pytest.raises(sqlite3.IntegrityError):          # versión 1: secretario de a uno
+        c.execute(q, (s2, s3))
+    assert db.version_de(c) == 1
+
+    db.inicializar_esquema(c)                            # aplica la actualización
+
+    assert db.version_de(c) == db.VERSION_ACTUAL
+    assert c.execute("SELECT count(*) AS n FROM interinatos").fetchone()["n"] == 1   # datos intactos
+    c.execute("UPDATE despachos SET turno = '1º Turno' WHERE id = ?", (did,))         # columna nueva
+    c.execute(q, (s2, s3))                               # ahora sí puede cubrir a dos
+    respaldos = list((config.RESPALDOS_DIR / "antes-de-actualizar").glob("pizarra-db-v1-*.db"))
+    assert len(respaldos) == 1                           # respaldo automático previo
+    c.close()

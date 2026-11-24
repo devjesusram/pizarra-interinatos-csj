@@ -87,12 +87,16 @@ En cualquier PC de la red, abra el navegador (Chrome, Edge o Firefox) y escriba:
 
 Entre como administrador y abra **👤 → ⚙ Administración**:
 
-1. **Despachos:** cargue los juzgados de la circunscripción, con su fuero y localidad.
-2. **Personal:** cargue a cada funcionario con su cargo y su despacho.
-3. **Usuarios:** cree un usuario para cada compañero.
+1. **Despachos:** cargue los juzgados de la circunscripción, con su fuero, turno y localidad. Cada turno es un
+   despacho, por ejemplo `Juzgado Civil y Comercial 1º Turno - Caacupé` con turno `1º Turno`.
+2. **Personal:** cargue a cada funcionario con su cargo y su despacho. Si un turno tiene dos secretarias, cargue
+   a las dos en el mismo despacho.
+3. **Cargos:** revise cuántos despachos puede cubrir a la vez una persona de cada cargo. Por defecto: jueces,
+   actuarios y secretarios sin límite; ujieres, de a uno.
+4. **Usuarios:** cree un usuario para cada compañero.
    - **Operador:** carga licencias e interinatos.
    - **Administrador:** además gestiona el personal, los usuarios y la auditoría.
-4. **Días inhábiles:** cargue los feriados y la feria judicial del año.
+5. **Días inhábiles:** cargue los feriados y la feria judicial del año.
 
 ### Si cargó datos de ejemplo y quiere empezar con los datos reales
 
@@ -138,6 +142,10 @@ Los adjuntos del mismo respaldo se restauran solos. Antes de restaurar, se guard
    los archivos `.bat`, reemplazando los anteriores. **No toque** las carpetas `datos` y `respaldos` ni el archivo
    `configuracion.txt`.
 4. Ejecute `3-instalar-como-servicio.bat` como administrador.
+
+Al iniciar, la Pizarra actualiza sola la base de datos si la versión nueva lo necesita. Antes de hacerlo guarda
+automáticamente una copia en `respaldos\antes-de-actualizar`. Puede comprobar la versión de la base en el archivo
+`datos\registros\pizarra.log`, en la línea *"Versión de la base de datos"*.
 
 ---
 

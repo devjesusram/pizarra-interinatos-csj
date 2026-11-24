@@ -53,6 +53,8 @@ def main() -> None:
     log = logging.getLogger("pizarra")
     if db.inicializar_esquema():
         log.info("Base de datos creada en %s", config.DB_PATH)
+    with db.conexion() as conn:
+        log.info("Versión de la base de datos: %s", db.version_de(conn))
     log.info("Pizarra iniciada. Datos en %s", config.DATOS_DIR)
     log.info("Abra en esta PC: http://localhost:%s", config.PUERTO)
     for ip in _ips_locales():

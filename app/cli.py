@@ -6,6 +6,7 @@
   python -m app.cli restaurar <archivo .db> [archivo de adjuntos .zip]
 """
 import getpass
+import re
 import shutil
 import sqlite3
 import sys
@@ -137,14 +138,19 @@ def demo() -> None:
         with db.escritura(conn):
             k = 0
             for i, (nom, fuero, loc) in enumerate(DESPACHOS):
-                did = conn.execute("INSERT INTO despachos (nombre, fuero, localidad) VALUES (?, ?, ?)",
-                                   (nom, fuero, loc)).lastrowid
+                turno = re.search(r"\dº Turno", nom)
+                did = conn.execute("INSERT INTO despachos (nombre, fuero, localidad, turno) VALUES (?, ?, ?, ?)",
+                                   (nom, fuero, loc, turno.group(0) if turno else None)).lastrowid
                 for c in CARGOS:
                     n = f"{APELLIDOS[k % 20]}, {NOMBRES[(k * 7 + k // 20) % 20]}"
                     k += 1
                     ids[(i, c)] = conn.execute(
                         "INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES (?, ?, ?)",
                         (n, c, did)).lastrowid
+            # Segunda secretaria en el 1º Turno civil (los turnos suelen tener dos)
+            ids[(0, "SECRETARIO2")] = conn.execute(
+                "INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES (?, 'SECRETARIO', 1)",
+                ("Rojas, Mónica",)).lastrowid
             for fecha, desc in [(date(hoy.year, 12, 8), "Día de la Virgen de Caacupé"),
                                 (date(hoy.year, 12, 25), "Navidad")]:
                 conn.execute("INSERT OR IGNORE INTO dias_inhabiles VALUES (?, ?)", (fecha.isoformat(), desc))

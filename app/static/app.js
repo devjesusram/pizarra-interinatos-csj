@@ -19,6 +19,10 @@ const fmtHora = (ts) => (ts ? new Date(ts).toLocaleString("es-PY", { dateStyle: 
 const lunesDe = (iso) => { const d = aFecha(iso); const w = (d.getUTCDay() + 6) % 7; return sumar(iso, -w); };
 const finDeSemana = (iso) => [0, 6].includes(aFecha(iso).getUTCDay());
 
+/** Nombre del despacho, con el turno si no figura ya en el nombre. */
+const conTurno = (despacho, turno) =>
+  turno && !String(despacho).toLowerCase().includes(String(turno).toLowerCase()) ? `${despacho} · ${turno}` : despacho;
+
 const pref = {
   leer(k, def) { try { const v = localStorage.getItem("pizarra." + k); return v === null ? def : JSON.parse(v); } catch { return def; } },
   guardar(k, v) { try { localStorage.setItem("pizarra." + k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
@@ -138,6 +142,9 @@ async function iniciar() {
   const locs = [...new Set(E.cat.despachos.map((d) => d.localidad))].sort();
   $("#f-fuero").insertAdjacentHTML("beforeend", fueros.map((f) => `<option>${esc(f)}</option>`).join(""));
   $("#f-localidad").insertAdjacentHTML("beforeend", locs.map((f) => `<option>${esc(f)}</option>`).join(""));
+  const turnos = [...new Set(E.cat.despachos.map((d) => d.turno).filter(Boolean))].sort();
+  $("#l-turno").hidden = !turnos.length;
+  $("#f-turno").insertAdjacentHTML("beforeend", turnos.map((t) => `<option>${esc(t)}</option>`).join(""));
   $("#f-novedades").checked = pref.leer("novedades", true);
   conectarEventos();
   await recargar();
@@ -249,10 +256,11 @@ function eventosDe(p, dias) {
 }
 
 function filtrar(p) {
-  const fc = $("#f-cargo").value, ff = $("#f-fuero").value, fl = $("#f-localidad").value;
+  const fc = $("#f-cargo").value, ff = $("#f-fuero").value, fl = $("#f-localidad").value, ft = $("#f-turno").value;
   const q = $("#f-buscar").value.trim().toLowerCase();
   if (fc && p.cargo_codigo !== fc) return false;
   if (ff && p.fuero !== ff) return false;
+  if (ft && p.turno !== ft) return false;
   if (fl && p.localidad !== fl) return false;
   if (q && !(p.nombre_completo + " " + p.despacho).toLowerCase().includes(q)) return false;
   return true;
@@ -269,7 +277,7 @@ function dibujarPizarra() {
     const ev = eventosDe(p, dias);
     const clave = porCargo ? p.cargo_codigo : "d" + p.despacho_id;
     if (!grupos.has(clave)) {
-      grupos.set(clave, { titulo: porCargo ? p.cargo : p.despacho, sub: porCargo ? "" : `${p.fuero} · ${p.localidad}`,
+      grupos.set(clave, { titulo: porCargo ? p.cargo : p.despacho, sub: porCargo ? "" : [p.fuero, p.turno && !p.despacho.includes(p.turno) ? p.turno : "", p.localidad].filter(Boolean).join(" · "),
                           orden: porCargo ? p.orden_pizarra : p.localidad + p.despacho, filas: [], total: 0 });
     }
     const g = grupos.get(clave);
@@ -299,7 +307,7 @@ function dibujarPizarra() {
     for (const { p, ev } of g.filas) {
       filas++;
       const n = Math.max(1, ev.carriles.length);
-      const sub = porCargo ? `${p.despacho}` : p.cargo;
+      const sub = porCargo ? conTurno(p.despacho, p.turno) : p.cargo;
       html += `<div class="fila" ${estiloDias} data-pid="${p.id}">
         <div class="nombre" style="grid-row:1 / span ${n}"><span class="n">${esc(p.nombre_completo)}${ev.carga >= 2 ? `<span class="carga" title="Despachos que cubre a la vez">cubre ${ev.carga}</span>` : ""}</span><span class="s" title="${esc(sub)}">${esc(sub)}</span></div>`;
       for (const d of dias) {
@@ -385,7 +393,7 @@ function opcionesPersonal(seleccion, filtro = () => true) {
     porCargo.get(p.cargo).push(p);
   }
   return `<option value="">— Seleccione —</option>` + [...porCargo.entries()].map(([c, ps]) =>
-    `<optgroup label="${esc(c)}">${ps.map((p) => `<option value="${p.id}" ${p.id === seleccion ? "selected" : ""}>${esc(p.nombre_completo)} — ${esc(p.despacho)}</option>`).join("")}</optgroup>`).join("");
+    `<optgroup label="${esc(c)}">${ps.map((p) => `<option value="${p.id}" ${p.id === seleccion ? "selected" : ""}>${esc(p.nombre_completo)} — ${esc(conTurno(p.despacho, p.turno))}</option>`).join("")}</optgroup>`).join("");
 }
 
 function contarDias(a, b) {
@@ -586,7 +594,7 @@ function formInterinato(ini = {}, existente = null) {
     <label class="req">Interino</label>
     <div><input type="search" id="i-buscar" placeholder="Filtrar candidatos…" style="width:100%;margin-bottom:6px">
       <div class="candidatos" id="i-cand"><div class="vacio">Elija titular y fechas.</div></div>
-      <div class="ayuda">Solo se listan funcionarios del mismo cargo. Primero los disponibles y los de la misma localidad.</div></div>
+      <div class="ayuda">Solo se listan funcionarios del mismo cargo. Primero los disponibles; entre ellos, los del mismo despacho o turno y luego los de la misma localidad.</div></div>
     <label for="i-acto">Nº de acto de designación</label><input type="text" id="i-acto" value="${esc(v.acto_designacion || "")}">
     <label for="i-obs">Observaciones</label><textarea id="i-obs">${esc(v.observaciones || "")}</textarea>
   </form>`;
@@ -613,7 +621,7 @@ function formInterinato(ini = {}, existente = null) {
     const etiqueta = { DISPONIBLE: "Disponible", AVISO: "Con aviso", BLOQUEADO: "No disponible" };
     el.innerHTML = cs.map((c) => `<label class="candidato ${c.estado}">
       <input type="radio" name="cand" value="${c.id}" ${c.estado === "BLOQUEADO" ? "disabled" : ""} ${c.id === elegido ? "checked" : ""}>
-      <span><b>${esc(c.nombre_completo)}</b> — ${esc(c.despacho)}<br>
+      <span><b>${esc(c.nombre_completo)}</b> — ${esc(conTurno(c.despacho, c.turno))}${c.mismo_despacho ? ` <span class="chip VIGENTE">mismo despacho</span>` : ""}<br>
         ${c.hallazgos.map((h) => `<span class="motivo">${h.nivel === "BLOQUEO" ? "✖" : h.nivel === "ADVERTENCIA" ? "⚠" : "ℹ️"} ${esc(h.mensaje)}</span>`).join("<br>")}</span>
       <span class="estado">${etiqueta[c.estado]}</span></label>`).join("");
     $$("[name=cand]", el).forEach((r) => (r.onchange = () => (elegido = +r.value)));
@@ -741,7 +749,7 @@ function cambiarClave() {
 
 // ── Administración (solo ADMIN) ───────────────────────────────────────
 async function administrar(pestana = "personal") {
-  const tabs = { personal: "Personal", despachos: "Despachos", usuarios: "Usuarios", inhabiles: "Días inhábiles", auditoria: "Auditoría" };
+  const tabs = { personal: "Personal", despachos: "Despachos", cargos: "Cargos", usuarios: "Usuarios", inhabiles: "Días inhábiles", auditoria: "Auditoría" };
   const { cuerpo } = modal($("#modal"), { titulo: "Administración", ancho: true,
     cuerpo: `<div class="pestanas">${Object.entries(tabs).map(([k, t]) => `<button data-t="${k}" class="${k === pestana ? "activa" : ""}">${t}</button>`).join("")}</div><div id="adm"></div>` });
   $$(".pestanas button", cuerpo).forEach((b) => (b.onclick = () => administrar(b.dataset.t)));
@@ -749,6 +757,7 @@ async function administrar(pestana = "personal") {
   try {
     if (pestana === "personal") await admPersonal(el);
     if (pestana === "despachos") await admDespachos(el);
+    if (pestana === "cargos") await admCargos(el);
     if (pestana === "usuarios") await admUsuarios(el);
     if (pestana === "inhabiles") await admInhabiles(el);
     if (pestana === "auditoria") await admAuditoria(el);
@@ -810,9 +819,11 @@ async function admPersonal(el) {
 async function admDespachos(el) {
   const ds = E.cat.despachos;
   const fueros = [...new Set(ds.map((d) => d.fuero))], locs = [...new Set(ds.map((d) => d.localidad))];
+  const turnos = [...new Set(["1º Turno", "2º Turno", "3º Turno", "4º Turno", ...ds.map((d) => d.turno).filter(Boolean)])];
   const editar = (d = {}) => formSimple(d.id ? "Editar despacho" : "Nuevo despacho", [
-    { k: "nombre", t: "Nombre", req: true, min: 3 },
+    { k: "nombre", t: "Nombre", req: true, min: 3, ayuda: "Ej.: Juzgado Civil y Comercial 1º Turno - Caacupé" },
     { k: "fuero", t: "Fuero", req: true, lista: fueros },
+    { k: "turno", t: "Turno", lista: turnos, ayuda: "Opcional. Permite filtrar la pizarra por turno." },
     { k: "localidad", t: "Localidad", req: true, lista: locs },
     { k: "activo", t: "Estado", tipo: "check", ayuda: "Activo" },
   ], d, async (x) => {
@@ -821,10 +832,31 @@ async function admDespachos(el) {
     administrar("despachos");
   });
   el.innerHTML = `<button class="btn primario" id="a-nuevo" style="margin-bottom:8px">+ Despacho</button>
-    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Despacho</th><th>Fuero</th><th>Localidad</th><th></th></tr></thead>
-    <tbody>${ds.map((d) => `<tr class="${d.activo ? "" : "inactivo"}"><td>${esc(d.nombre)}</td><td>${esc(d.fuero)}</td><td>${esc(d.localidad)}</td><td><button class="btn chico" data-id="${d.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
+    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Despacho</th><th>Fuero</th><th>Turno</th><th>Localidad</th><th></th></tr></thead>
+    <tbody>${ds.map((d) => `<tr class="${d.activo ? "" : "inactivo"}"><td>${esc(d.nombre)}</td><td>${esc(d.fuero)}</td><td>${esc(d.turno || "—")}</td><td>${esc(d.localidad)}</td><td><button class="btn chico" data-id="${d.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#a-nuevo", el).onclick = () => editar({ activo: true });
   $$("[data-id]", el).forEach((b) => (b.onclick = () => editar(ds.find((d) => d.id === +b.dataset.id))));
+}
+
+async function admCargos(el) {
+  const cs = E.cat.cargos;
+  const tope = (c) => (c.max_interinatos_simultaneos == null ? "Sin límite" : String(c.max_interinatos_simultaneos));
+  el.innerHTML = `<p class="ayuda">Cuántos despachos puede cubrir a la vez <b>una misma persona</b> de cada cargo,
+      además del propio. Los interinatos siguen siendo solo entre pares (Juez↔Juez, Actuario↔Actuario…).</p>
+    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Cargo</th><th>Aprueba sus licencias</th><th>Despachos a la vez</th><th></th></tr></thead>
+    <tbody>${cs.map((c) => `<tr><td>${esc(c.nombre)}</td><td>${c.organo_aprobador === "CONSEJO" ? "Consejo de Administración" : "RRHH"}</td>
+      <td>${tope(c)}</td><td><button class="btn chico" data-c="${c.codigo}">Cambiar</button></td></tr>`).join("")}</tbody></table></div>`;
+  $$("[data-c]", el).forEach((b) => (b.onclick = () => {
+    const c = cs.find((x) => x.codigo === b.dataset.c);
+    formSimple(`Límite para ${c.nombre}`, [
+      { k: "tope", t: "Despachos a la vez", tipo: "number", ayuda: "Déjelo vacío para «sin límite». 1 = solo uno a la vez." },
+    ], { tope: c.max_interinatos_simultaneos ?? "" }, async (d) => {
+      const n = String(d.tope).trim() === "" ? null : Math.max(1, parseInt(d.tope, 10));
+      await api("PUT", `/api/cargos/${c.codigo}`, { max_interinatos_simultaneos: n });
+      await refrescarCatalogos();
+      administrar("cargos");
+    });
+  }));
 }
 
 async function admUsuarios(el) {
@@ -905,7 +937,7 @@ function conectarEventos() {
   $("#hoy").onclick = () => { E.desde = lunesDe(E.hoy); recargar(); };
   $("#largo").onchange = (e) => { E.largo = +e.target.value; pref.guardar("largo", E.largo); recargar(); };
   $("#vista").onchange = (e) => { E.vista = e.target.value; pref.guardar("vista", E.vista); dibujarPizarra(); };
-  ["#f-cargo", "#f-fuero", "#f-localidad"].forEach((s) => ($(s).onchange = dibujarPizarra));
+  ["#f-cargo", "#f-fuero", "#f-localidad", "#f-turno"].forEach((s) => ($(s).onchange = dibujarPizarra));
   $("#f-novedades").onchange = (e) => { pref.guardar("novedades", e.target.checked); dibujarPizarra(); };
   let t;
   $("#f-buscar").oninput = () => { clearTimeout(t); t = setTimeout(dibujarPizarra, 150); };

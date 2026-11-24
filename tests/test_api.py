@@ -2,6 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db
 from app.main import app
 
 
@@ -96,3 +97,26 @@ def test_detalles_devuelven_json(cliente, datos):
                                                  "fecha_inicio": "2026-11-16", "fecha_fin": "2026-11-20"}).json()["id"]
     assert cliente.get(f"/api/licencias/{lid}").status_code == 200
     assert cliente.get(f"/api/interinatos/{iid}").status_code == 200
+
+
+def test_candidatos_del_mismo_despacho_primero(cliente, datos, conn):
+    with db.escritura(conn):
+        despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["secretario1"],)).fetchone()
+        companera = conn.execute("INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) "
+                                 "VALUES ('Zulma (mismo turno)', 'SECRETARIO', ?)", (despacho["despacho_id"],)).lastrowid
+    entrar(cliente)
+    r = cliente.get(f"/api/disponibilidad?titular_id={datos['secretario1']}&desde=2026-11-16&hasta=2026-11-20").json()
+    assert r["candidatos"][0]["id"] == companera and r["candidatos"][0]["mismo_despacho"]
+
+
+def test_admin_cambia_tope_y_turno(cliente, datos):
+    entrar(cliente)
+    assert cliente.put("/api/cargos/UJIER", json={"max_interinatos_simultaneos": None}).status_code == 200
+    assert cliente.put("/api/cargos/UJIER", json={"max_interinatos_simultaneos": 1}).status_code == 200
+    r = cliente.post("/api/despachos", json={"nombre": "Juzgado Civil", "fuero": "Civil", "localidad": "Caacupé",
+                                            "turno": "2º Turno"})
+    assert r.status_code == 201
+    desp = [x for x in cliente.get("/api/catalogos").json()["despachos"] if x["id"] == r.json()["id"]][0]
+    assert desp["turno"] == "2º Turno"
+    entrar(cliente, "oper")
+    assert cliente.put("/api/cargos/UJIER", json={"max_interinatos_simultaneos": 3}).status_code == 403

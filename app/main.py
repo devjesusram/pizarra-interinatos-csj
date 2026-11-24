@@ -135,7 +135,15 @@ class DespachoIn(BaseModel):
     nombre: str = Field(min_length=3)
     fuero: str = Field(min_length=2)
     localidad: str = Field(min_length=2)
+    turno: Optional[str] = None
     activo: bool = True
+
+    _limpiar = field_validator("turno", mode="before")(_vacio_a_none)
+
+
+class CargoIn(BaseModel):
+    # None = sin límite de despachos cubiertos a la vez
+    max_interinatos_simultaneos: Optional[int] = Field(default=None, ge=1, le=50)
 
 
 class DiaInhabilIn(BaseModel):
@@ -192,13 +200,13 @@ def catalogos(u=Depends(usuario_actual)):
         return {
             "cargos": todos(conn, "SELECT * FROM cargos ORDER BY orden_pizarra"),
             "tipos_licencia": booleanos(todos(conn, "SELECT * FROM tipos_licencia WHERE activo = 1 ORDER BY nombre"), "activo"),
-            "despachos": booleanos(todos(conn, "SELECT * FROM despachos ORDER BY localidad, nombre"), "activo"),
+            "despachos": booleanos(todos(conn, "SELECT * FROM despachos ORDER BY localidad, nombre, turno"), "activo"),
         }
 
 
 SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id, p.email, p.activo,
                          p.ics_token, c.nombre AS cargo, c.orden_pizarra, d.nombre AS despacho,
-                         d.fuero, d.localidad
+                         d.fuero, d.localidad, d.turno
                   FROM personal p JOIN cargos c ON c.codigo = p.cargo_codigo
                   JOIN despachos d ON d.id = p.despacho_id"""
 
@@ -249,8 +257,8 @@ def editar_personal(pid: int, body: PersonalIn, u=Depends(requiere_admin)):
 @app.post("/api/despachos", status_code=201)
 def crear_despacho(body: DespachoIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return _guardar(conn, """INSERT INTO despachos (nombre, fuero, localidad, activo)
-                                 VALUES (:nombre, :fuero, :localidad, :activo)""",
+        return _guardar(conn, """INSERT INTO despachos (nombre, fuero, localidad, turno, activo)
+                                 VALUES (:nombre, :fuero, :localidad, :turno, :activo)""",
                         _bool01(body.model_dump()), "despachos", "CREAR", u["id"])
 
 
@@ -258,8 +266,29 @@ def crear_despacho(body: DespachoIn, u=Depends(requiere_admin)):
 def editar_despacho(did: int, body: DespachoIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
         return _guardar(conn, """UPDATE despachos SET nombre = :nombre, fuero = :fuero,
-                                   localidad = :localidad, activo = :activo WHERE id = :id""",
+                                   localidad = :localidad, turno = :turno, activo = :activo WHERE id = :id""",
                         _bool01({**body.model_dump(), "id": did}), "despachos", "MODIFICAR", u["id"], did)
+
+
+@app.put("/api/cargos/{codigo}")
+def editar_cargo(codigo: str, body: CargoIn, u=Depends(requiere_admin)):
+    """Cambia cuántos despachos puede cubrir a la vez una persona de ese cargo."""
+    tope = body.max_interinatos_simultaneos
+    with db.conexion() as conn:
+        cargo = uno(conn, "SELECT * FROM cargos WHERE codigo = ?", (codigo,))
+        if not cargo:
+            raise HTTPException(404, "Cargo inexistente")
+        if tope is not None:
+            # No se puede bajar el tope por debajo de lo que ya está asignado de hoy en adelante
+            excedidos = servicios.excesos_de_tope(conn, codigo, tope, hoy())
+            if excedidos:
+                raise HTTPException(409, "No se puede bajar el límite: " + "; ".join(excedidos)
+                                    + ". Anule o ajuste esos interinatos primero.")
+        with escritura(conn):
+            conn.execute("UPDATE cargos SET max_interinatos_simultaneos = ? WHERE codigo = ?", (tope, codigo))
+            servicios.auditar(conn, "cargos", 0, "MODIFICAR",
+                              {"cargo": codigo, "max_interinatos_simultaneos": tope}, u["id"])
+    return {"ok": True}
 
 
 @app.get("/api/dias-inhabiles")
@@ -399,11 +428,14 @@ def disponibilidad(titular_id: int, desde: date, hasta: date, excluir_id: Option
             else:
                 estado = "DISPONIBLE"
             candidatos.append({"id": c["id"], "nombre_completo": c["nombre_completo"],
-                               "despacho": c["despacho"], "localidad": c["localidad"],
+                               "despacho": c["despacho"], "turno": c["turno"], "localidad": c["localidad"],
+                               "mismo_despacho": c["despacho_id"] == tit["despacho_id"],
                                "estado": estado, "hallazgos": [h.a_dict() for h in propios]})
+        # Primero los disponibles; entre ellos, los compañeros del mismo despacho (turno)
+        # y después los de la misma localidad
         orden = {"DISPONIBLE": 0, "AVISO": 1, "BLOQUEADO": 2}
-        candidatos.sort(key=lambda c: (orden[c["estado"]], c["localidad"] != tit["localidad"],
-                                       c["nombre_completo"]))
+        candidatos.sort(key=lambda c: (orden[c["estado"]], not c["mismo_despacho"],
+                                       c["localidad"] != tit["localidad"], c["nombre_completo"]))
         generales = []
         if candidatos:
             hall = validar_interinato(conn, titular_id, candidatos[0]["id"], desde, hasta, excluir_id)

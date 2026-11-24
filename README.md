@@ -18,7 +18,7 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 
 - **Pizarra / planner:** una fila por funcionario y una columna por día, agrupada por cargo o por despacho.
   - 🟥 **Licencia** (con 📎 si tiene adjunto)
-  - 🟦 **Cubriendo un interinato** (los jueces pueden cubrir varios despachos a la vez)
+  - 🟦 **Cubriendo un interinato** (jueces, actuarios y secretarios pueden cubrir varios despachos a la vez)
   - 🟩 **Cubierto por…**
   - 🟨 **⚠ Sin cubrir** (clic para asignar un interino)
   - 🟪 **⚡ En conflicto** (el interino recibió una licencia)
@@ -27,13 +27,16 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 - **Registro de licencias desde el correo:** se adjunta el PDF o el `.eml`. Si se arrastra un `.eml`, el sistema
   completa remitente, fecha y asunto.
 - **Selector de interinos:** muestra solo personas del mismo cargo, con su disponibilidad y el motivo cuando no
-  están disponibles.
+  están disponibles. Sugiere primero a los compañeros del mismo despacho o turno.
+- **Turnos:** cada despacho puede tener su turno, y la pizarra se puede filtrar por turno.
 - **Exportación `.ics`:** archivo descargable y enlace de suscripción por funcionario.
 - **Modo TV:** pantalla de solo lectura para un monitor en la oficina.
 - **Usuarios y roles:** OPERADOR / ADMIN, con **auditoría** completa.
 - **Varios operadores a la vez:** las escrituras se atienden de a una (`BEGIN IMMEDIATE`), así que dos personas
   guardando al mismo tiempo no pueden generar cruces. Si dos editan el mismo registro, el segundo recibe un aviso.
 - **Respaldo automático nocturno** y restauración con un doble clic.
+- **Actualizaciones sin perder datos:** al instalar una versión nueva, la base se actualiza sola al iniciar y antes
+  se guarda un respaldo en `respaldos/antes-de-actualizar`.
 
 ### Reglas de validación
 
@@ -43,7 +46,7 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 | R2 | Nadie puede cubrirse a sí mismo | ⛔ Bloquea |
 | R3 | Funcionario dado de baja | ⛔ Bloquea |
 | R4 | El interino está de licencia | ⛔ Bloquea |
-| R5 | El interino ya cubre otro despacho (salvo jueces, que pueden acumular) | ⛔ Bloquea (también en la BD) · ℹ️ informa en jueces |
+| R5 | El interino supera el límite de despachos a la vez de su cargo (configurable en Administración → Cargos; por defecto jueces, actuarios y secretarios sin límite, ujieres de a uno) | ⛔ Bloquea · ℹ️ informa cuántos despachos acumula |
 | R6 | El titular ya tiene interino en esas fechas | ⛔ Bloquea (también en la BD) |
 | R7 | El interino está ausente y cubierto por otro | ⛔ Bloquea |
 | R8 | El titular no tiene licencia registrada en parte del período | ⚠ Pide confirmación |

@@ -240,6 +240,29 @@ def anular_interinato(conn, int_id: int, motivo: str, version: int, usuario_id: 
         auditar(conn, "interinatos", int_id, "ANULAR", {"motivo": motivo}, usuario_id)
 
 
+def excesos_de_tope(conn, cargo: str, tope: int, hoy: date) -> list[str]:
+    """Personas de ese cargo que, de hoy en adelante, cubren más despachos a la vez que 'tope'."""
+    filas = todos(conn, """SELECT i.interino_id, x.nombre_completo, i.fecha_inicio, i.fecha_fin
+                           FROM interinatos i JOIN personal x ON x.id = i.interino_id
+                           WHERE i.cargo_codigo = ? AND i.estado <> 'ANULADO' AND i.fecha_fin >= ?""",
+                  (cargo, iso(hoy)))
+    por_persona: dict[int, list[dict]] = {}
+    for f_ in filas:
+        por_persona.setdefault(f_["interino_id"], []).append(f_)
+    excedidos = []
+    for lista in por_persona.values():
+        if len(lista) <= tope:
+            continue
+        inicio = max(hoy, min(a_fecha(x["fecha_inicio"]) for x in lista))
+        fin = max(a_fecha(x["fecha_fin"]) for x in lista)
+        for d in dias(inicio, fin):
+            n = sum(1 for x in lista if x["fecha_inicio"] <= d.isoformat() <= x["fecha_fin"])
+            if n > tope:
+                excedidos.append(f"{lista[0]['nombre_completo']} cubre {n} despachos el {f(d)}")
+                break
+    return excedidos
+
+
 # ── Consultas para la pizarra ──────────────────────────────────────────
 
 def alertas(conn, hoy: date, horizonte: int = 60) -> dict:
