@@ -215,3 +215,33 @@ def test_respaldo_y_restauracion(conn, datos, tmp_path):
     assert conn.execute("SELECT estado FROM licencias WHERE id = ?", (lid,)).fetchone()["estado"] == "ANULADA"
     cli.restaurar(str(copia))
     assert conn.execute("SELECT estado FROM licencias WHERE id = ?", (lid,)).fetchone()["estado"] == "VIGENTE"
+
+
+def test_juez_cubre_tres_juzgados_ademas_del_propio(conn, datos):
+    """Un juez puede interinar 3 (o más) juzgados a la vez, además de su juzgado natural."""
+    with db.escritura(conn):
+        did = conn.execute("INSERT INTO despachos (nombre, fuero, localidad) VALUES ('J4', 'Penal', 'Tobatí')").lastrowid
+        datos["juez4"] = conn.execute("INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) "
+                                      "VALUES ('Juez 4', 'JUEZ', ?)", (did,)).lastrowid
+    inter(conn, datos, "juez1", "juez4", 0, 9)
+    inter(conn, datos, "juez2", "juez4", 0, 9)
+    _, infos = inter(conn, datos, "juez3", "juez4", 2, 6)
+    assert "3 despachos" in infos[0].mensaje
+    n = conn.execute("SELECT count(*) AS n FROM interinatos WHERE interino_id = ? AND estado = 'VIGENTE'",
+                     (datos["juez4"],)).fetchone()["n"]
+    assert n == 3
+
+
+def test_dos_secretarias_del_mismo_juzgado(conn, datos):
+    """Dos secretarias en el mismo juzgado (turno): una puede cubrir a la otra."""
+    with db.escritura(conn):
+        despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["secretario1"],)).fetchone()
+        datos["secretaria1b"] = conn.execute(
+            "INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id) VALUES ('Secretaria 1B', 'SECRETARIO', ?)",
+            (despacho["despacho_id"],)).lastrowid
+    lic(conn, datos, "secretario1", 0, 4)
+    inter(conn, datos, "secretario1", "secretaria1b", 0, 4, confirmar=False)
+    # Pero mientras cubre a su compañera, no puede cubrir además a otra secretaria
+    with pytest.raises(Bloqueado) as e:
+        inter(conn, datos, "secretario2", "secretaria1b", 2, 3)
+    assert reglas(e) == {"R5"}
