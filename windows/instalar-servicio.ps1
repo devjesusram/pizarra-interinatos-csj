@@ -78,11 +78,14 @@ New-NetFirewallRule -DisplayName $reglaFirewall -Direction Inbound -Protocol TCP
 Paso 'Iniciando la Pizarra...'
 Start-ScheduledTask -TaskName $tarea
 $ok = $false
-for ($i = 0; $i -lt 30; $i++) {
+# Se consulta directo a esta PC, SIN pasar por el proxy institucional (si lo hay)
+$cliente = New-Object System.Net.WebClient
+$cliente.Proxy = $null
+for ($i = 0; $i -lt 60; $i++) {
     Start-Sleep -Seconds 1
     try {
-        $r = Invoke-WebRequest -Uri "http://localhost:$puerto/salud" -UseBasicParsing -TimeoutSec 2
-        if ($r.StatusCode -eq 200) { $ok = $true; break }
+        $respuesta = $cliente.DownloadString("http://127.0.0.1:$puerto/salud")
+        if ($respuesta -match 'ok') { $ok = $true; break }
     } catch { }
 }
 
