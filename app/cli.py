@@ -188,6 +188,20 @@ def demo() -> None:
         lic(9, "UJIER", "Particular", lunes + timedelta(days=9), 2)
         # Licencia futura sin cubrir
         lic(5, "JUEZ", "Maternidad", lunes + timedelta(days=14), 30)
+        # Actuaria de la Sria. Nº 1 que además está a cargo de la Sria. Nº 2 (vacante)
+        # del Juzgado Penal de Garantías 1º Turno
+        with db.escritura(conn):
+            conn.execute("UPDATE personal SET secretaria = 'Nº 1' WHERE id = ?", (ids[(2, "ACTUARIO")],))
+        despacho_penal = db.uno(conn, "SELECT despacho_id FROM personal WHERE id = ?", (ids[(2, "ACTUARIO")],))["despacho_id"]
+        vac = servicios.crear_vacante(conn, {"despacho_id": despacho_penal, "cargo_codigo": "ACTUARIO",
+                                             "secretaria": "Nº 2", "fecha_desde": lunes - timedelta(days=30),
+                                             "observaciones": "Dato de ejemplo"}, uid)
+        servicios.crear_interinato(conn, {"vacante_id": vac, "interino_id": ids[(2, "ACTUARIO")],
+                                          "fecha_inicio": lunes - timedelta(days=30), "fecha_fin": lunes + timedelta(days=60),
+                                          "acto_designacion": "DEMO"}, uid, confirmar_advertencias=True)
+        # Un puesto vacante de ujier sin nadie a cargo
+        servicios.crear_vacante(conn, {"despacho_id": despacho_penal, "cargo_codigo": "UJIER",
+                                       "fecha_desde": lunes + timedelta(days=2)}, uid)
     print("Datos de ejemplo cargados (son ficticios: reemplácelos por los reales).")
 
 

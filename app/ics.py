@@ -20,11 +20,15 @@ SQL_LICENCIAS = """
 
 SQL_INTERINATOS = """
   SELECT i.id, i.fecha_inicio, i.fecha_fin, i.estado, i.version, i.acto_designacion,
-         t.nombre_completo AS titular, x.nombre_completo AS interino, d.nombre AS despacho
+         coalesce(t.nombre_completo,
+                  'puesto vacante' || CASE WHEN v.secretaria IS NOT NULL THEN ' (Sria. ' || v.secretaria || ')' ELSE '' END)
+           AS titular,
+         x.nombre_completo AS interino, d.nombre AS despacho
   FROM interinatos i
-  JOIN personal t ON t.id = i.titular_id
+  LEFT JOIN personal t ON t.id = i.titular_id
+  LEFT JOIN vacantes v ON v.id = i.vacante_id
   JOIN personal x ON x.id = i.interino_id
-  JOIN despachos d ON d.id = t.despacho_id
+  JOIN despachos d ON d.id = coalesce(t.despacho_id, v.despacho_id)
   WHERE i.fecha_inicio <= :hasta AND i.fecha_fin >= :desde {filtro}"""
 
 

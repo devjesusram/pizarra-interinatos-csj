@@ -15,8 +15,9 @@ from .validaciones import (Bloqueado, ConflictoVersion, Hallazgo, Nivel, Requier
 CAMPOS_LICENCIA = ("personal_id", "tipo_licencia_id", "fecha_inicio", "fecha_fin",
                    "organo_aprobador", "nro_resolucion", "correo_remitente", "correo_asunto",
                    "correo_fecha", "enlace_externo", "observaciones")
-CAMPOS_INTERINATO = ("titular_id", "interino_id", "licencia_id", "fecha_inicio", "fecha_fin",
+CAMPOS_INTERINATO = ("titular_id", "vacante_id", "interino_id", "licencia_id", "fecha_inicio", "fecha_fin",
                      "acto_designacion", "observaciones")
+CAMPOS_VACANTE = ("despacho_id", "cargo_codigo", "secretaria", "fecha_desde", "fecha_hasta", "observaciones")
 
 
 def _json(o) -> str:
@@ -24,8 +25,8 @@ def _json(o) -> str:
 
 
 def _normalizar(d: dict, campos) -> dict:
-    return {k: iso(d.get(k)) if k in ("fecha_inicio", "fecha_fin", "correo_fecha") else d.get(k)
-            for k in campos}
+    return {k: iso(d.get(k)) if k in ("fecha_inicio", "fecha_fin", "correo_fecha", "fecha_desde", "fecha_hasta")
+            else d.get(k) for k in campos}
 
 
 def auditar(conn, tabla, registro_id, accion, datos, usuario_id, hallazgos=None):
@@ -39,6 +40,7 @@ def auditar(conn, tabla, registro_id, accion, datos, usuario_id, hallazgos=None)
 MENSAJES_BD = {
     "LIC_SOLAPE": ("L1", "Ya existe una licencia vigente que se cruza con esas fechas."),
     "INT_TITULAR_UNICO": ("R6", "El titular ya tiene un interino asignado en esas fechas."),
+    "INT_VACANTE_UNICA": ("R6", "El puesto vacante ya tiene a alguien a cargo en esas fechas."),
     "INT_INTERINO_UNICO": ("R5", "La persona ya cubre otro despacho en esas fechas."),
     "INT_PARES": ("R9", "Los interinatos son solo entre funcionarios del mismo cargo."),
 }
@@ -59,11 +61,12 @@ def recalcular_conflictos(conn, personal_id: int) -> list[Hallazgo]:
     Devuelve avisos de los que pasaron a conflicto."""
     avisos = []
     for i in todos(conn, """
-            SELECT i.id, i.estado, i.fecha_inicio, i.fecha_fin, t.nombre_completo AS titular,
+            SELECT i.id, i.estado, i.fecha_inicio, i.fecha_fin,
+                   coalesce(t.nombre_completo, 'un puesto vacante') AS titular,
                    EXISTS (SELECT 1 FROM licencias l
                            WHERE l.personal_id = i.interino_id AND l.estado = 'VIGENTE'
                              AND l.fecha_inicio <= i.fecha_fin AND l.fecha_fin >= i.fecha_inicio) AS choca
-            FROM interinatos i JOIN personal t ON t.id = i.titular_id
+            FROM interinatos i LEFT JOIN personal t ON t.id = i.titular_id
             WHERE i.interino_id = ? AND i.estado IN ('VIGENTE', 'EN_CONFLICTO')""", (personal_id,)):
         nuevo = "EN_CONFLICTO" if i["choca"] else "VIGENTE"
         if nuevo != i["estado"]:
@@ -169,8 +172,12 @@ def _separar(h: list[Hallazgo]):
             [x for x in h if x.nivel == Nivel.INFO])
 
 
-def _cargo_de(conn, personal_id):
-    r = uno(conn, "SELECT cargo_codigo FROM personal WHERE id = ?", (personal_id,))
+def _cargo_cubierto(conn, datos: dict):
+    """Cargo de la persona ausente o del puesto vacante que se cubre."""
+    if datos.get("vacante_id") is not None:
+        r = uno(conn, "SELECT cargo_codigo FROM vacantes WHERE id = ?", (datos["vacante_id"],))
+    else:
+        r = uno(conn, "SELECT cargo_codigo FROM personal WHERE id = ?", (datos.get("titular_id"),))
     return r["cargo_codigo"] if r else None
 
 
@@ -179,7 +186,8 @@ def crear_interinato(conn, d: dict, usuario_id: int,
     datos = _normalizar(d, CAMPOS_INTERINATO)
     with escritura(conn):
         bloqueos, avisos, infos = _separar(validar_interinato(
-            conn, datos["titular_id"], datos["interino_id"], datos["fecha_inicio"], datos["fecha_fin"]))
+            conn, datos["titular_id"], datos["interino_id"], datos["fecha_inicio"], datos["fecha_fin"],
+            vacante_id=datos["vacante_id"]))
         if bloqueos:
             raise Bloqueado(bloqueos)
         if avisos and not confirmar_advertencias:
@@ -187,7 +195,7 @@ def crear_interinato(conn, d: dict, usuario_id: int,
         try:
             cur = conn.execute(f"""INSERT INTO interinatos ({', '.join(CAMPOS_INTERINATO)}, cargo_codigo, creado_por)
                                    VALUES ({', '.join(':' + c for c in CAMPOS_INTERINATO)}, :cargo, :u)""",
-                               {**datos, "cargo": _cargo_de(conn, datos["titular_id"]), "u": usuario_id})
+                               {**datos, "cargo": _cargo_cubierto(conn, datos), "u": usuario_id})
         except sqlite3.IntegrityError as e:
             raise traducir_error_bd(e)
         nuevo = cur.lastrowid
@@ -206,7 +214,7 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
             raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "E1", "No se puede editar un interinato anulado.")])
         bloqueos, avisos, infos = _separar(validar_interinato(
             conn, datos["titular_id"], datos["interino_id"], datos["fecha_inicio"],
-            datos["fecha_fin"], excluir_id=int_id))
+            datos["fecha_fin"], excluir_id=int_id, vacante_id=datos["vacante_id"]))
         if bloqueos:
             raise Bloqueado(bloqueos)
         if avisos and not confirmar_advertencias:
@@ -217,7 +225,7 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
                                           cargo_codigo = :cargo, estado = 'VIGENTE', version = version + 1,
                                           modificado_por = :u, modificado_en = :ahora
                                    WHERE id = :id AND version = :v""",
-                               {**datos, "cargo": _cargo_de(conn, datos["titular_id"]), "u": usuario_id,
+                               {**datos, "cargo": _cargo_cubierto(conn, datos), "u": usuario_id,
                                 "id": int_id, "v": version, "ahora": ahora_utc()})
         except sqlite3.IntegrityError as e:
             raise traducir_error_bd(e)
@@ -294,10 +302,72 @@ def alertas(conn, hoy: date, horizonte: int = 60) -> dict:
     sin_cubrir.sort(key=lambda x: (x["primer_dia"], x["orden_pizarra"], x["nombre_completo"]))
     en_conflicto = todos(conn, """
         SELECT i.id, i.fecha_inicio, i.fecha_fin, i.version,
-               t.nombre_completo AS titular, x.nombre_completo AS interino
+               coalesce(t.nombre_completo, 'un puesto vacante') AS titular, x.nombre_completo AS interino
         FROM interinatos i
-        JOIN personal t ON t.id = i.titular_id
+        LEFT JOIN personal t ON t.id = i.titular_id
         JOIN personal x ON x.id = i.interino_id
         WHERE i.estado = 'EN_CONFLICTO' AND i.fecha_fin >= ?
         ORDER BY i.fecha_inicio""", (iso(hoy),))
-    return {"sin_cubrir": sin_cubrir, "en_conflicto": en_conflicto}
+
+    vacantes_sin_cubrir = []
+    for v in todos(conn, """
+            SELECT v.id AS vacante_id, v.cargo_codigo, v.secretaria, v.fecha_desde, v.fecha_hasta,
+                   c.nombre AS cargo, c.orden_pizarra, d.nombre AS despacho
+            FROM vacantes v JOIN cargos c ON c.codigo = v.cargo_codigo
+            JOIN despachos d ON d.id = v.despacho_id
+            WHERE v.fecha_desde <= ? AND (v.fecha_hasta IS NULL OR v.fecha_hasta >= ?)""",
+                   (iso(limite), iso(hoy))):
+        cobertura = todos(conn, """SELECT fecha_inicio, fecha_fin FROM interinatos
+                                   WHERE vacante_id = ? AND estado <> 'ANULADO'""", (v["vacante_id"],))
+        fin_v = min(a_fecha(v["fecha_hasta"]), limite) if v["fecha_hasta"] else limite
+        faltan = [d for d in dias(max(a_fecha(v["fecha_desde"]), hoy), fin_v)
+                  if d.weekday() < 5 and d.isoformat() not in inhabiles
+                  and not any(c["fecha_inicio"] <= d.isoformat() <= c["fecha_fin"] for c in cobertura)]
+        if faltan:
+            vacantes_sin_cubrir.append({**v, "primer_dia": iso(faltan[0]), "ultimo_dia": iso(faltan[-1]),
+                                        "dias_sin_cubrir": len(faltan)})
+    vacantes_sin_cubrir.sort(key=lambda x: (x["primer_dia"], x["orden_pizarra"]))
+    return {"sin_cubrir": sin_cubrir, "en_conflicto": en_conflicto, "vacantes_sin_cubrir": vacantes_sin_cubrir}
+
+
+# ── Puestos vacantes ───────────────────────────────────────────────────
+
+def _validar_vacante(datos: dict):
+    if datos["fecha_hasta"] and datos["fecha_hasta"] < datos["fecha_desde"]:
+        raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "R1", "La fecha de fin es anterior a la fecha de inicio.")])
+
+
+def crear_vacante(conn, d: dict, usuario_id: int) -> int:
+    datos = _normalizar(d, CAMPOS_VACANTE)
+    _validar_vacante(datos)
+    with escritura(conn):
+        try:
+            cur = conn.execute(f"""INSERT INTO vacantes ({', '.join(CAMPOS_VACANTE)}, creado_por)
+                                   VALUES ({', '.join(':' + c for c in CAMPOS_VACANTE)}, :u)""",
+                               {**datos, "u": usuario_id})
+        except sqlite3.IntegrityError as e:
+            raise traducir_error_bd(e)
+        auditar(conn, "vacantes", cur.lastrowid, "CREAR", datos, usuario_id)
+        return cur.lastrowid
+
+
+def editar_vacante(conn, vac_id: int, d: dict, version: int, usuario_id: int) -> None:
+    datos = _normalizar(d, CAMPOS_VACANTE)
+    _validar_vacante(datos)
+    with escritura(conn):
+        actual = uno(conn, "SELECT cargo_codigo FROM vacantes WHERE id = ?", (vac_id,))
+        if not actual:
+            raise LookupError("Puesto vacante inexistente")
+        if actual["cargo_codigo"] != datos["cargo_codigo"] and uno(
+                conn, "SELECT 1 AS x FROM interinatos WHERE vacante_id = ? AND estado <> 'ANULADO'", (vac_id,)):
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "R9", "No se puede cambiar el cargo: el puesto ya tiene "
+                                                           "interinatos. Anúlelos primero o cree otro puesto.")])
+        try:
+            cur = conn.execute(f"""UPDATE vacantes SET {', '.join(c + ' = :' + c for c in CAMPOS_VACANTE)},
+                                          version = version + 1
+                                   WHERE id = :id AND version = :v""", {**datos, "id": vac_id, "v": version})
+        except sqlite3.IntegrityError as e:
+            raise traducir_error_bd(e)
+        if cur.rowcount == 0:
+            raise ConflictoVersion("Otro usuario modificó este puesto vacante. Recargue y vuelva a intentar.")
+        auditar(conn, "vacantes", vac_id, "MODIFICAR", datos, usuario_id)

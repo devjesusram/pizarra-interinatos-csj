@@ -23,6 +23,8 @@ const finDeSemana = (iso) => [0, 6].includes(aFecha(iso).getUTCDay());
 const conTurno = (despacho, turno) =>
   turno && !String(despacho).toLowerCase().includes(String(turno).toLowerCase()) ? `${despacho} · ${turno}` : despacho;
 
+const minusInicial = (t) => (t ? t[0].toLowerCase() + t.slice(1) : t);
+
 const pref = {
   leer(k, def) { try { const v = localStorage.getItem("pizarra." + k); return v === null ? def : JSON.parse(v); } catch { return def; } },
   guardar(k, v) { try { localStorage.setItem("pizarra." + k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
@@ -169,13 +171,16 @@ async function recargar() {
 // ── Alertas ───────────────────────────────────────────────────────────
 function dibujarAlertas() {
   const a = E.alertas, el = $("#alertas");
-  const n = a.sin_cubrir.length + a.en_conflicto.length;
+  const vac = a.vacantes_sin_cubrir || [];
+  const n = a.sin_cubrir.length + a.en_conflicto.length + vac.length;
   el.hidden = n === 0;
   if (!n) return;
   const abierto = pref.leer("alertasAbiertas", innerWidth > 700);
-  el.innerHTML = `<details ${abierto ? "open" : ""}><summary>⚠ ${n} alerta(s): ${a.sin_cubrir.length} ausente(s) sin cubrir · ${a.en_conflicto.length} interinato(s) en conflicto</summary><ul>
+  el.innerHTML = `<details ${abierto ? "open" : ""}><summary>⚠ ${n} alerta(s): ${a.sin_cubrir.length} ausente(s) sin cubrir${vac.length ? ` · ${vac.length} puesto(s) vacante(s) sin nadie a cargo` : ""} · ${a.en_conflicto.length} interinato(s) en conflicto</summary><ul>
     ${a.sin_cubrir.map((x, i) => `<li><b>${esc(x.nombre_completo)}</b> (${esc(x.cargo)}, ${esc(x.despacho)}) — licencia ${esc(x.tipo).toLowerCase()} del ${fmt(x.fecha_inicio)} al ${fmt(x.fecha_fin)}: <b>${x.dias_sin_cubrir} día(s) hábil(es) sin interino</b> desde el ${fmt(x.primer_dia)}.
       <button class="btn chico" data-asignar="${i}">Asignar interino</button></li>`).join("")}
+    ${vac.map((x, i) => `<li>⚪ <b>Puesto vacante de ${esc(x.cargo)}${x.secretaria ? " (Sria. " + esc(x.secretaria) + ")" : ""}</b> en ${esc(x.despacho)}: <b>${x.dias_sin_cubrir} día(s) hábil(es) sin nadie a cargo</b> desde el ${fmt(x.primer_dia)}.
+      <button class="btn chico" data-vacante="${i}">Asignar a cargo</button></li>`).join("")}
     ${a.en_conflicto.map((x) => `<li>⚡ Interinato de <b>${esc(x.interino)}</b> cubriendo a ${esc(x.titular)} (${fmt(x.fecha_inicio)}–${fmt(x.fecha_fin)}) está <b>EN CONFLICTO</b>: el interino tiene licencia.
       <button class="btn chico" data-conflicto="${x.id}">Resolver</button></li>`).join("")}
   </ul></details>`;
@@ -185,6 +190,10 @@ function dibujarAlertas() {
     formInterinato({ titular_id: x.personal_id, fecha_inicio: x.primer_dia, fecha_fin: x.fecha_fin, licencia_id: x.licencia_id });
   }));
   $$("[data-conflicto]", el).forEach((b) => (b.onclick = () => verInterinato(+b.dataset.conflicto)));
+  $$("[data-vacante]", el).forEach((b) => (b.onclick = () => {
+    const x = vac[+b.dataset.vacante];
+    formInterinato({ vacante_id: x.vacante_id, fecha_inicio: x.primer_dia, fecha_fin: x.fecha_hasta || x.ultimo_dia });
+  }));
 }
 
 // ── Pizarra ───────────────────────────────────────────────────────────
@@ -203,11 +212,19 @@ function eventosDe(p, dias) {
   const col = (iso) => Math.max(0, difDias(ini, iso));
   const recorte = (a, b) => [a < ini ? ini : a, b > fin ? fin : b];
   const carriles = [];
-  const lic = licencias.filter((l) => l.personal_id === p.id);
-  const comoTitular = interinatos.filter((i) => i.titular_id === p.id);
-  const comoInterino = interinatos.filter((i) => i.interino_id === p.id).sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? -1 : 1));
+  const esVac = !!p.esVacante, vac = p.vac;
+  // Para un puesto vacante, el "período de ausencia" es el de la vacancia
+  const lic = esVac ? [{ id: vac.id, fecha_inicio: vac.fecha_desde, fecha_fin: vac.fecha_hasta || "9999-12-31" }]
+                    : licencias.filter((l) => l.personal_id === p.id);
+  const comoTitular = esVac ? interinatos.filter((i) => i.vacante_id === vac.id)
+                            : interinatos.filter((i) => i.titular_id === p.id);
+  const comoInterino = esVac ? [] : interinatos.filter((i) => i.interino_id === p.id).sort((a, b) => (a.fecha_inicio < b.fecha_inicio ? -1 : 1));
 
-  if (lic.length) {
+  if (esVac) {
+    const [a, b] = recorte(vac.fecha_desde, vac.fecha_hasta || "9999-12-31");
+    carriles.push([{ tipo: "vacante", c0: col(a), c1: col(b), texto: `PUESTO VACANTE${vac.secretaria ? " · Sria. " + vac.secretaria : ""}`,
+                     titulo: `Vacante desde el ${fmt(vac.fecha_desde)}${vac.fecha_hasta ? " hasta el " + fmt(vac.fecha_hasta) : ""}`, ref: vac }]);
+  } else if (lic.length) {
     carriles.push(lic.map((l) => {
       const [a, b] = recorte(l.fecha_inicio, l.fecha_fin);
       return { tipo: "licencia", c0: col(a), c1: col(b), texto: `${l.tipo.toUpperCase()}${l.tiene_adjunto ? " 📎" : ""}`,
@@ -231,10 +248,12 @@ function eventosDe(p, dias) {
     if (segs.length) {
       carriles.push(segs.map((s) => s.cub
         ? { tipo: s.cub.estado === "EN_CONFLICTO" ? "conflicto" : "cubierto", c0: s.c0, c1: s.c1,
-            texto: `${s.cub.estado === "EN_CONFLICTO" ? "⚡" : "✔"} cubre: ${s.cub.interino}`,
+            texto: `${s.cub.estado === "EN_CONFLICTO" ? "⚡" : "✔"} ${esVac ? "a cargo" : "cubre"}: ${s.cub.interino}`,
             titulo: `Interino: ${s.cub.interino} (${fmt(s.cub.fecha_inicio)} al ${fmt(s.cub.fecha_fin)})`, ref: s.cub }
-        : { tipo: "sin-cubrir", c0: s.c0, c1: s.c1, texto: "⚠ SIN CUBRIR", titulo: "Clic para asignar un interino",
-            ref: { titular_id: p.id, fecha_inicio: sumar(E.desde, s.c0), fecha_fin: sumar(E.desde, s.c1), licencia_id: s.enLic.id } }));
+        : { tipo: "sin-cubrir", c0: s.c0, c1: s.c1, texto: esVac ? "⚠ SIN NADIE A CARGO" : "⚠ SIN CUBRIR",
+            titulo: "Clic para asignar un interino",
+            ref: esVac ? { vacante_id: vac.id, fecha_inicio: sumar(E.desde, s.c0), fecha_fin: sumar(E.desde, s.c1) }
+                       : { titular_id: p.id, fecha_inicio: sumar(E.desde, s.c0), fecha_fin: sumar(E.desde, s.c1), licencia_id: s.enLic.id } }));
     }
   }
   // Interinatos que la persona cubre (los jueces pueden tener varios a la vez)
@@ -242,8 +261,8 @@ function eventosDe(p, dias) {
   for (const it of comoInterino) {
     const [a, b] = recorte(it.fecha_inicio, it.fecha_fin);
     const ev = { tipo: it.estado === "EN_CONFLICTO" ? "conflicto" : "interino", c0: col(a), c1: col(b),
-                 texto: `${it.estado === "EN_CONFLICTO" ? "⚡ " : ""}INTERINO de ${it.titular} · ${it.despacho_titular}`,
-                 titulo: `Interino de ${it.titular} (${it.despacho_titular}) del ${fmt(it.fecha_inicio)} al ${fmt(it.fecha_fin)}`, ref: it };
+                 texto: `${it.estado === "EN_CONFLICTO" ? "⚡ " : ""}${it.vacante_id ? "A CARGO de " + minusInicial(it.titular) : "INTERINO de " + it.titular} · ${it.despacho_titular}`,
+                 titulo: `${it.vacante_id ? "A cargo de " + minusInicial(it.titular) : "Interino de " + it.titular} (${it.despacho_titular}) del ${fmt(it.fecha_inicio)} al ${fmt(it.fecha_fin)}`, ref: it };
     let k = pilas.findIndex((pl) => pl.every((o) => o.c1 < ev.c0 || o.c0 > ev.c1));
     if (k < 0) { pilas.push([]); k = pilas.length - 1; }
     pilas[k].push(ev);
@@ -266,26 +285,53 @@ function filtrar(p) {
   return true;
 }
 
+/** Un puesto vacante se muestra como una fila más de la pizarra. */
+const filaVacante = (v) => ({
+  id: "v" + v.id, esVacante: true, vac: v, nombre_completo: "Puesto vacante", cargo: v.cargo,
+  cargo_codigo: v.cargo_codigo, orden_pizarra: v.orden_pizarra, despacho: v.despacho, despacho_id: v.despacho_id,
+  fuero: v.fuero, localidad: v.localidad, turno: v.turno, secretaria: v.secretaria,
+});
+
+/** "Juez: Cáceres, Silvia (a cargo hoy: X, interino)" para el encabezado de cada despacho. */
+function juezResponsable(despachoId) {
+  const fin = sumar(E.desde, E.largo - 1);
+  const ref = E.hoy >= E.desde && E.hoy <= fin ? E.hoy : E.desde;
+  const etq = ref === E.hoy ? "hoy" : `el ${fmtCorto(ref)}`;
+  const vigente = (x, a = "fecha_inicio", b = "fecha_fin") => x[a] <= ref && (!x[b] || ref <= x[b]);
+  const partes = [];
+  for (const j of E.datos.personal.filter((p) => p.despacho_id === despachoId && p.cargo_codigo === "JUEZ")) {
+    const cub = E.datos.interinatos.find((i) => i.titular_id === j.id && vigente(i));
+    const lic = E.datos.licencias.find((l) => l.personal_id === j.id && vigente(l));
+    partes.push(`Juez: ${j.nombre_completo}` + (cub ? ` (a cargo ${etq}: ${cub.interino}, interino)` : lic ? ` (⚠ de licencia ${etq}, sin interino)` : ""));
+  }
+  for (const v of E.datos.vacantes.filter((v) => v.despacho_id === despachoId && v.cargo_codigo === "JUEZ" && vigente(v, "fecha_desde", "fecha_hasta"))) {
+    const cub = E.datos.interinatos.find((i) => i.vacante_id === v.id && vigente(i));
+    partes.push(`Juez: cargo vacante` + (cub ? ` (a cargo ${etq}: ${cub.interino})` : ` (⚠ sin nadie a cargo ${etq})`));
+  }
+  return partes.join(" · ");
+}
+
 function dibujarPizarra() {
   const dias = diasVisibles();
   const tab = $("#tablero");
   const soloNov = $("#f-novedades").checked;
   const porCargo = E.vista === "cargo";
   const grupos = new Map();
-  for (const p of E.datos.personal) {
+  for (const p of [...E.datos.personal, ...E.datos.vacantes.map(filaVacante)]) {
     if (!filtrar(p)) continue;
     const ev = eventosDe(p, dias);
     const clave = porCargo ? p.cargo_codigo : "d" + p.despacho_id;
     if (!grupos.has(clave)) {
       grupos.set(clave, { titulo: porCargo ? p.cargo : p.despacho, sub: porCargo ? "" : [p.fuero, p.turno && !p.despacho.includes(p.turno) ? p.turno : "", p.localidad].filter(Boolean).join(" · "),
-                          orden: porCargo ? p.orden_pizarra : p.localidad + p.despacho, filas: [], total: 0 });
+                          orden: porCargo ? p.orden_pizarra : p.localidad + p.despacho, filas: [], total: 0,
+                          juez: porCargo ? "" : juezResponsable(p.despacho_id) });
     }
     const g = grupos.get(clave);
     g.total++;
     if (ev.carriles.length || !soloNov) g.filas.push({ p, ev });
   }
   const lista = [...grupos.entries()].sort((a, b) => (a[1].orden < b[1].orden ? -1 : 1));
-  if (!porCargo) lista.forEach(([, g]) => g.filas.sort((a, b) => a.p.orden_pizarra - b.p.orden_pizarra));
+  if (!porCargo) lista.forEach(([, g]) => g.filas.sort((a, b) => a.p.orden_pizarra - b.p.orden_pizarra || !!a.p.esVacante - !!b.p.esVacante));
 
   const estiloDias = `style="--dias:${dias.length}"`;
   let html = `<div class="grilla"><div class="fila cabecera" ${estiloDias}><div class="esquina">${porCargo ? "Cargo / Funcionario" : "Despacho / Funcionario"}</div>`;
@@ -298,18 +344,19 @@ function dibujarPizarra() {
   let filas = 0;
   for (const [clave, g] of lista) {
     if (soloNov && !g.filas.length && lista.length > 1) {
-      html += `<div class="grupo" data-grupo="${esc(clave)}">▶ ${esc(g.titulo)} <span class="cuenta">${esc(g.sub)} · sin novedades (${g.total})</span></div>`;
+      html += `<div class="grupo" data-grupo="${esc(clave)}">▶ ${esc(g.titulo)} <span class="cuenta">${esc(g.sub)} · sin novedades (${g.total})</span>${g.juez ? `<span class="juez">${esc(g.juez)}</span>` : ""}</div>`;
       continue;
     }
     const col = E.colapsados.has(clave);
-    html += `<div class="grupo" data-grupo="${esc(clave)}">${col ? "▶" : "▼"} ${esc(g.titulo)} <span class="cuenta">${esc(g.sub)}${g.sub ? " · " : ""}${g.filas.length} ${soloNov ? "con novedades" : "funcionarios"} / ${g.total}</span></div>`;
+    html += `<div class="grupo" data-grupo="${esc(clave)}">${col ? "▶" : "▼"} ${esc(g.titulo)} <span class="cuenta">${esc(g.sub)}${g.sub ? " · " : ""}${g.filas.length} ${soloNov ? "con novedades" : "funcionarios"} / ${g.total}</span>${g.juez ? `<span class="juez">${esc(g.juez)}</span>` : ""}</div>`;
     if (col) continue;
     for (const { p, ev } of g.filas) {
       filas++;
       const n = Math.max(1, ev.carriles.length);
-      const sub = porCargo ? conTurno(p.despacho, p.turno) : p.cargo;
-      html += `<div class="fila" ${estiloDias} data-pid="${p.id}">
-        <div class="nombre" style="grid-row:1 / span ${n}"><span class="n">${esc(p.nombre_completo)}${ev.carga >= 2 ? `<span class="carga" title="Despachos que cubre a la vez">cubre ${ev.carga}</span>` : ""}</span><span class="s" title="${esc(sub)}">${esc(sub)}</span></div>`;
+      const sria = p.secretaria ? ` · Sria. ${p.secretaria}` : "";
+      const sub = (porCargo ? conTurno(p.despacho, p.turno) : p.cargo) + sria;
+      html += `<div class="fila${p.esVacante ? " vacante" : ""}" ${estiloDias} data-pid="${p.id}">
+        <div class="nombre" style="grid-row:1 / span ${n}"><span class="n">${p.esVacante ? "⚪ " : ""}${esc(p.nombre_completo)}${ev.carga >= 2 ? `<span class="carga" title="Despachos que cubre a la vez">cubre ${ev.carga}</span>` : ""}</span><span class="s" title="${esc(sub)}">${esc(sub)}</span></div>`;
       for (const d of dias) {
         html += `<div class="celda ${d.inhabil ? "inhabil" : ""} ${d.hoy ? "hoy" : ""}" style="grid-column:${d.i + 2};grid-row:1 / span ${n}" data-i="${d.i}"></div>`;
       }
@@ -327,12 +374,13 @@ function dibujarPizarra() {
 
   // Guardar los eventos por fila para resolver los clics
   const mapa = new Map();
-  for (const [, g] of lista) for (const f of g.filas) mapa.set(f.p.id, f.ev);
+  for (const [, g] of lista) for (const f of g.filas) mapa.set(String(f.p.id), f.ev);
   $$(".barra-evento", tab).forEach((el) => {
-    const pid = +el.closest(".fila").dataset.pid;
+    const pid = el.closest(".fila").dataset.pid;
     const b = mapa.get(pid).carriles[+el.dataset.k][+el.dataset.j];
     el.onclick = () => {
       if (b.tipo === "licencia") verLicencia(b.ref.id);
+      else if (b.tipo === "vacante") verVacante(b.ref.id);
       else if (b.tipo === "sin-cubrir") formInterinato(b.ref);
       else verInterinato(b.ref.id);
     };
@@ -366,7 +414,7 @@ function activarSeleccion(tab) {
   });
   tab.onpointerdown = (ev) => {
     const c = ev.target.closest(".celda");
-    if (!c || ev.button !== 0) return;
+    if (!c || ev.button !== 0 || c.closest(".fila").dataset.pid.startsWith("v")) return;   // no en filas de vacantes
     ev.preventDefault();
     sel = { fila: c.closest(".fila"), a: +c.dataset.i, b: +c.dataset.i };
     pintar();
@@ -579,13 +627,29 @@ function anular(tabla, reg) {
 }
 
 // ── Interinatos ───────────────────────────────────────────────────────
-function formInterinato(ini = {}, existente = null) {
+async function formInterinato(ini = {}, existente = null) {
   const v = existente || ini;
   const pm = personaPorId();
   let elegido = existente ? existente.interino_id : null;
   let licenciaId = v.licencia_id ?? null;
+  let modo = v.vacante_id ? "vacante" : "persona";
+  let vacantes = [];
+  try { vacantes = await api("GET", "/api/vacantes?solo_vigentes=true"); } catch (e) { /* sin vacantes */ }
+  if (v.vacante_id && !vacantes.some((x) => x.id === v.vacante_id)) {
+    try { vacantes.push(await api("GET", `/api/vacantes/${v.vacante_id}`)); } catch (e) { /* ya no existe */ }
+  }
+  const opcionesVac = `<option value="">— Seleccione —</option>` + vacantes.map((x) =>
+    `<option value="${x.id}" ${x.id === v.vacante_id ? "selected" : ""}>${esc(x.cargo)}${x.secretaria ? " · Sria. " + esc(x.secretaria) : ""} — ${esc(conTurno(x.despacho, x.turno))}</option>`).join("");
   const html = `<form class="form" id="f-int" autocomplete="off">
-    <label class="req" for="i-tit">Titular (ausente)</label><select id="i-tit" required>${opcionesPersonal(v.titular_id)}</select>
+    <label>Cubre a</label>
+    <div class="fila-campos">
+      <label><input type="radio" name="modo" value="persona" ${modo === "persona" ? "checked" : ""}> Una persona ausente</label>
+      <label><input type="radio" name="modo" value="vacante" ${modo === "vacante" ? "checked" : ""} ${vacantes.length ? "" : "disabled"}> Un puesto vacante</label>
+      ${vacantes.length ? "" : `<span class="ayuda">(no hay puestos vacantes cargados: se cargan en Administración → Vacantes)</span>`}</div>
+    <label class="req fila-persona" for="i-tit">Titular (ausente)</label>
+    <select id="i-tit" class="fila-persona">${opcionesPersonal(v.titular_id)}</select>
+    <label class="req fila-vacante" for="i-vac">Puesto vacante</label>
+    <select id="i-vac" class="fila-vacante">${opcionesVac}</select>
     <label class="req">Período</label>
     <div class="fila-campos">Desde <input type="date" id="i-ini" required value="${esc(v.fecha_inicio || "")}">
       Hasta <input type="date" id="i-fin" required value="${esc(v.fecha_fin || "")}"></div>
@@ -593,7 +657,7 @@ function formInterinato(ini = {}, existente = null) {
     <div class="full" id="i-generales"></div>
     <label class="req">Interino</label>
     <div><input type="search" id="i-buscar" placeholder="Filtrar candidatos…" style="width:100%;margin-bottom:6px">
-      <div class="candidatos" id="i-cand"><div class="vacio">Elija titular y fechas.</div></div>
+      <div class="candidatos" id="i-cand"><div class="vacio">Elija a quién cubre y las fechas.</div></div>
       <div class="ayuda">Solo se listan funcionarios del mismo cargo. Primero los disponibles; entre ellos, los del mismo despacho o turno y luego los de la misma localidad.</div></div>
     <label for="i-acto">Nº de acto de designación</label><input type="text" id="i-acto" value="${esc(v.acto_designacion || "")}">
     <label for="i-obs">Observaciones</label><textarea id="i-obs">${esc(v.observaciones || "")}</textarea>
@@ -605,8 +669,21 @@ function formInterinato(ini = {}, existente = null) {
   const f = $("#f-int", cuerpo);
   let datosCand = null, pedido = 0;
 
+  const mostrarModo = () => {
+    $$(".fila-persona", f).forEach((e) => (e.hidden = modo !== "persona"));
+    $$(".fila-vacante", f).forEach((e) => (e.hidden = modo !== "vacante"));
+    $("#i-tit", f).required = modo === "persona";
+    $("#i-vac", f).required = modo === "vacante";
+  };
   const motivo = () => {
-    const tid = +$("#i-tit", f).value, a = $("#i-ini", f).value, b = $("#i-fin", f).value;
+    const a = $("#i-ini", f).value, b = $("#i-fin", f).value;
+    if (modo === "vacante") {
+      licenciaId = null;
+      const x = vacantes.find((y) => y.id === +$("#i-vac", f).value);
+      $("#i-motivo", f).textContent = x ? `Puesto vacante desde el ${fmt(x.fecha_desde)}${x.fecha_hasta ? " hasta el " + fmt(x.fecha_hasta) : " (sin fecha de fin)"}` : "";
+      return;
+    }
+    const tid = +$("#i-tit", f).value;
     const l = E.datos.licencias.find((x) => x.id === licenciaId) ||
               E.datos.licencias.find((x) => x.personal_id === tid && x.fecha_inicio <= b && x.fecha_fin >= a);
     licenciaId = l && l.personal_id === tid ? l.id : null;
@@ -621,19 +698,21 @@ function formInterinato(ini = {}, existente = null) {
     const etiqueta = { DISPONIBLE: "Disponible", AVISO: "Con aviso", BLOQUEADO: "No disponible" };
     el.innerHTML = cs.map((c) => `<label class="candidato ${c.estado}">
       <input type="radio" name="cand" value="${c.id}" ${c.estado === "BLOQUEADO" ? "disabled" : ""} ${c.id === elegido ? "checked" : ""}>
-      <span><b>${esc(c.nombre_completo)}</b> — ${esc(conTurno(c.despacho, c.turno))}${c.mismo_despacho ? ` <span class="chip VIGENTE">mismo despacho</span>` : ""}<br>
+      <span><b>${esc(c.nombre_completo)}</b> — ${esc(conTurno(c.despacho, c.turno))}${c.secretaria ? " · Sria. " + esc(c.secretaria) : ""}${c.mismo_despacho ? ` <span class="chip VIGENTE">mismo despacho</span>` : ""}<br>
         ${c.hallazgos.map((h) => `<span class="motivo">${h.nivel === "BLOQUEO" ? "✖" : h.nivel === "ADVERTENCIA" ? "⚠" : "ℹ️"} ${esc(h.mensaje)}</span>`).join("<br>")}</span>
       <span class="estado">${etiqueta[c.estado]}</span></label>`).join("");
     $$("[name=cand]", el).forEach((r) => (r.onchange = () => (elegido = +r.value)));
   };
   const cargarCand = async () => {
-    const tid = +$("#i-tit", f).value, a = $("#i-ini", f).value, b = $("#i-fin", f).value;
+    const a = $("#i-ini", f).value, b = $("#i-fin", f).value;
+    const id = modo === "vacante" ? +$("#i-vac", f).value : +$("#i-tit", f).value;
     motivo();
-    if (!tid || !a || !b || b < a) { $("#i-cand", f).innerHTML = `<div class="vacio">Elija titular y fechas.</div>`; $("#i-generales", f).innerHTML = ""; return; }
+    if (!id || !a || !b || b < a) { $("#i-cand", f).innerHTML = `<div class="vacio">Elija a quién cubre y las fechas.</div>`; $("#i-generales", f).innerHTML = ""; return; }
     const n = ++pedido;
     $("#i-cand", f).innerHTML = `<div class="vacio">Verificando disponibilidad…</div>`;
     try {
-      const d = await api("GET", `/api/disponibilidad?titular_id=${tid}&desde=${a}&hasta=${b}${existente ? "&excluir_id=" + existente.id : ""}`);
+      const quien = modo === "vacante" ? `vacante_id=${id}` : `titular_id=${id}`;
+      const d = await api("GET", `/api/disponibilidad?${quien}&desde=${a}&hasta=${b}${existente ? "&excluir_id=" + existente.id : ""}`);
       if (n !== pedido) return;
       datosCand = d;
       $("#i-generales", f).innerHTML = d.generales.length ? listaHallazgos(d.generales) : "";
@@ -641,17 +720,28 @@ function formInterinato(ini = {}, existente = null) {
       pintarCand();
     } catch (e) { mostrarError(e); }
   };
+  $$("[name=modo]", f).forEach((r) => (r.onchange = () => { modo = r.value; elegido = null; licenciaId = null; mostrarModo(); cargarCand(); }));
   $("#i-tit", f).onchange = () => { licenciaId = null; elegido = null; cargarCand(); };
+  $("#i-vac", f).onchange = () => {
+    elegido = null;
+    const x = vacantes.find((y) => y.id === +$("#i-vac", f).value);
+    if (x && !$("#i-ini", f).value) $("#i-ini", f).value = x.fecha_desde > E.hoy ? x.fecha_desde : E.hoy;
+    if (x && x.fecha_hasta && !$("#i-fin", f).value) $("#i-fin", f).value = x.fecha_hasta;
+    cargarCand();
+  };
   $("#i-ini", f).onchange = () => { if (!$("#i-fin", f).value || $("#i-fin", f).value < $("#i-ini", f).value) $("#i-fin", f).value = $("#i-ini", f).value; cargarCand(); };
   $("#i-fin", f).onchange = cargarCand;
   $("#i-buscar", f).oninput = pintarCand;
+  mostrarModo();
   cargarCand();
 
   async function guardar(confirmado) {
     if (!f.reportValidity()) return false;
     if (!elegido) { toast("Elija un interino de la lista."); return false; }
     const cuerpo = {
-      titular_id: +$("#i-tit", f).value, interino_id: elegido, licencia_id: licenciaId,
+      titular_id: modo === "persona" ? +$("#i-tit", f).value : null,
+      vacante_id: modo === "vacante" ? +$("#i-vac", f).value : null,
+      interino_id: elegido, licencia_id: modo === "persona" ? licenciaId : null,
       fecha_inicio: $("#i-ini", f).value, fecha_fin: $("#i-fin", f).value,
       acto_designacion: $("#i-acto", f).value, observaciones: $("#i-obs", f).value,
       confirmar_advertencias: confirmado,
@@ -681,10 +771,13 @@ function formInterinato(ini = {}, existente = null) {
 async function verInterinato(id) {
   let i;
   try { i = await api("GET", `/api/interinatos/${id}`); } catch (e) { return mostrarError(e); }
+  const cubre = i.vacante_id
+    ? `<dt>Puesto vacante</dt><dd><b>${esc(i.cargo)}${i.vacante_secretaria ? " · Sria. " + esc(i.vacante_secretaria) : ""}</b> — ${esc(i.despacho_titular)}</dd>`
+    : `<dt>Titular (ausente)</dt><dd><b>${esc(i.titular)}</b> — ${esc(i.despacho_titular)}</dd>`;
   const html = `${i.estado === "EN_CONFLICTO" ? listaHallazgos([{ nivel: "ADVERTENCIA", mensaje: "EN CONFLICTO: el interino tiene una licencia que se cruza con este período. Edite el interinato para cambiar de interino o de fechas, o anúlelo." }]) : ""}
   <dl class="detalle">
     <dt>Cargo</dt><dd>${esc(i.cargo)} <span class="chip ${i.estado}">${i.estado.replace("_", " ")}</span></dd>
-    <dt>Titular (ausente)</dt><dd><b>${esc(i.titular)}</b> — ${esc(i.despacho_titular)}</dd>
+    ${cubre}
     <dt>Interino</dt><dd><b>${esc(i.interino)}</b> — ${esc(i.despacho_interino)}</dd>
     <dt>Período</dt><dd>${fmt(i.fecha_inicio)} al ${fmt(i.fecha_fin)}</dd>
     <dt>Acto de designación</dt><dd>${esc(i.acto_designacion || "—")}</dd>
@@ -698,6 +791,44 @@ async function verInterinato(id) {
     pie.push({ texto: "Editar", clase: "primario", accion: () => { setTimeout(() => formInterinato({}, i), 0); } });
   }
   modal($("#modal"), { titulo: `Interinato #${i.id}`, cuerpo: html, pie });
+}
+
+// ── Puestos vacantes ──────────────────────────────────────────────────
+async function verVacante(id) {
+  let v;
+  try { v = await api("GET", `/api/vacantes/${id}`); } catch (e) { return mostrarError(e); }
+  const html = `<dl class="detalle">
+    <dt>Despacho</dt><dd><b>${esc(conTurno(v.despacho, v.turno))}</b></dd>
+    <dt>Cargo vacante</dt><dd>${esc(v.cargo)}${v.secretaria ? " · Sria. " + esc(v.secretaria) : ""}</dd>
+    <dt>Vacante</dt><dd>desde el ${fmt(v.fecha_desde)}${v.fecha_hasta ? " hasta el " + fmt(v.fecha_hasta) : " (sigue vacante)"}</dd>
+    <dt>A cargo</dt><dd>${v.interinatos.length ? v.interinatos.map((i) => `${esc(i.interino)} (${fmt(i.fecha_inicio)} – ${fmt(i.fecha_fin)})${i.estado === "EN_CONFLICTO" ? " ⚡" : ""}`).join("<br>") : "<b style='color:var(--sin-cubrir)'>⚠ Nadie asignado</b>"}</dd>
+    ${v.observaciones ? `<dt>Observaciones</dt><dd>${esc(v.observaciones)}</dd>` : ""}
+  </dl>`;
+  const pie = [{ texto: "Cerrar" }];
+  if (E.yo.rol === "ADMIN") pie.push({ texto: "Editar / cerrar vacante", accion: () => { setTimeout(() => formVacante(v), 0); } });
+  pie.push({ texto: "Asignar a cargo", clase: "primario", accion: () => {
+    const desde = v.fecha_desde > E.hoy ? v.fecha_desde : E.hoy;
+    setTimeout(() => formInterinato({ vacante_id: v.id, fecha_inicio: desde, fecha_fin: v.fecha_hasta || "" }), 0);
+  } });
+  modal($("#modal"), { titulo: "Puesto vacante", cuerpo: html, pie });
+}
+
+function formVacante(v = {}, alGuardar) {
+  const despachos = E.cat.despachos.map((d) => [d.id, conTurno(d.nombre, d.turno)]);
+  const cargos = E.cat.cargos.map((c) => [c.codigo, c.nombre]);
+  formSimple(v.id ? "Editar puesto vacante" : "Nuevo puesto vacante", [
+    { k: "despacho_id", t: "Despacho", tipo: "select", opciones: despachos, req: true, num: true },
+    { k: "cargo_codigo", t: "Cargo vacante", tipo: "select", opciones: cargos, req: true },
+    { k: "secretaria", t: "Secretaría", lista: ["Nº 1", "Nº 2", "Nº 3"], ayuda: "Opcional. Ej.: Nº 2" },
+    { k: "fecha_desde", t: "Vacante desde", tipo: "date", req: true },
+    { k: "fecha_hasta", t: "Vacante hasta", tipo: "date", ayuda: "Déjelo vacío mientras siga vacante. Complételo cuando se designe a un titular." },
+    { k: "observaciones", t: "Observaciones" },
+  ], { cargo_codigo: "ACTUARIO", fecha_desde: E.hoy, ...v }, async (d) => {
+    await api(v.id ? "PUT" : "POST", v.id ? `/api/vacantes/${v.id}` : "/api/vacantes", { ...d, version: v.version });
+    $("#modal").close();
+    await recargar();
+    if (alGuardar) alGuardar();
+  });
 }
 
 // ── Exportación .ics ──────────────────────────────────────────────────
@@ -749,7 +880,7 @@ function cambiarClave() {
 
 // ── Administración (solo ADMIN) ───────────────────────────────────────
 async function administrar(pestana = "personal") {
-  const tabs = { personal: "Personal", despachos: "Despachos", cargos: "Cargos", usuarios: "Usuarios", inhabiles: "Días inhábiles", auditoria: "Auditoría" };
+  const tabs = { personal: "Personal", despachos: "Despachos", vacantes: "Vacantes", cargos: "Cargos", usuarios: "Usuarios", inhabiles: "Días inhábiles", auditoria: "Auditoría" };
   const { cuerpo } = modal($("#modal"), { titulo: "Administración", ancho: true,
     cuerpo: `<div class="pestanas">${Object.entries(tabs).map(([k, t]) => `<button data-t="${k}" class="${k === pestana ? "activa" : ""}">${t}</button>`).join("")}</div><div id="adm"></div>` });
   $$(".pestanas button", cuerpo).forEach((b) => (b.onclick = () => administrar(b.dataset.t)));
@@ -758,6 +889,7 @@ async function administrar(pestana = "personal") {
     if (pestana === "personal") await admPersonal(el);
     if (pestana === "despachos") await admDespachos(el);
     if (pestana === "cargos") await admCargos(el);
+    if (pestana === "vacantes") await admVacantes(el);
     if (pestana === "usuarios") await admUsuarios(el);
     if (pestana === "inhabiles") await admInhabiles(el);
     if (pestana === "auditoria") await admAuditoria(el);
@@ -799,6 +931,7 @@ async function admPersonal(el) {
     { k: "nombre_completo", t: "Nombre completo", req: true, min: 3, ayuda: "Formato sugerido: Apellido, Nombre" },
     { k: "cargo_codigo", t: "Cargo", tipo: "select", opciones: cargos, req: true },
     { k: "despacho_id", t: "Despacho", tipo: "select", opciones: despachos, req: true, num: true },
+    { k: "secretaria", t: "Secretaría", lista: ["Nº 1", "Nº 2", "Nº 3"], ayuda: "Opcional. Ej.: Nº 1 (la Secretaría del juzgado a su cargo)" },
     { k: "email", t: "Correo", tipo: "email" },
     { k: "activo", t: "Estado", tipo: "check", ayuda: "Activo" },
   ], p, async (d) => {
@@ -808,8 +941,8 @@ async function admPersonal(el) {
   });
   el.innerHTML = `<div class="fila-campos" style="margin-bottom:8px"><button class="btn primario" id="a-nuevo">+ Funcionario</button>
     <input type="search" id="a-buscar" placeholder="Buscar…"></div>
-    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Nombre</th><th>Cargo</th><th>Despacho</th><th>Localidad</th><th></th></tr></thead>
-    <tbody>${ps.map((p) => `<tr class="${p.activo ? "" : "inactivo"}" data-q="${esc((p.nombre_completo + p.despacho).toLowerCase())}"><td>${esc(p.nombre_completo)}</td><td>${esc(p.cargo)}</td><td>${esc(p.despacho)}</td><td>${esc(p.localidad)}</td>
+    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Nombre</th><th>Cargo</th><th>Despacho</th><th>Sria.</th><th>Localidad</th><th></th></tr></thead>
+    <tbody>${ps.map((p) => `<tr class="${p.activo ? "" : "inactivo"}" data-q="${esc((p.nombre_completo + p.despacho).toLowerCase())}"><td>${esc(p.nombre_completo)}</td><td>${esc(p.cargo)}</td><td>${esc(conTurno(p.despacho, p.turno))}</td><td>${esc(p.secretaria || "—")}</td><td>${esc(p.localidad)}</td>
       <td><button class="btn chico" data-id="${p.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#a-nuevo", el).onclick = () => { if (!E.cat.despachos.length) return toast("Primero cargue al menos un despacho."); editar({ activo: true }); };
   $("#a-buscar", el).oninput = (e) => $$("tbody tr", el).forEach((tr) => (tr.hidden = !tr.dataset.q.includes(e.target.value.toLowerCase())));
@@ -836,6 +969,20 @@ async function admDespachos(el) {
     <tbody>${ds.map((d) => `<tr class="${d.activo ? "" : "inactivo"}"><td>${esc(d.nombre)}</td><td>${esc(d.fuero)}</td><td>${esc(d.turno || "—")}</td><td>${esc(d.localidad)}</td><td><button class="btn chico" data-id="${d.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#a-nuevo", el).onclick = () => editar({ activo: true });
   $$("[data-id]", el).forEach((b) => (b.onclick = () => editar(ds.find((d) => d.id === +b.dataset.id))));
+}
+
+async function admVacantes(el) {
+  const vs = await api("GET", "/api/vacantes");
+  el.innerHTML = `<p class="ayuda">Puestos sin titular (por ejemplo, una Secretaría sin actuaria designada). Quien quede a cargo
+      se asigna como un interinato normal, eligiendo «Un puesto vacante». Cuando se designe a un titular, complete
+      «Vacante hasta».</p>
+    <button class="btn primario" id="a-nuevo" style="margin-bottom:8px">+ Puesto vacante</button>
+    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Despacho</th><th>Cargo</th><th>Secretaría</th><th>Desde</th><th>Hasta</th><th></th></tr></thead>
+    <tbody>${vs.map((v) => `<tr class="${v.fecha_hasta && v.fecha_hasta < E.hoy ? "inactivo" : ""}"><td>${esc(conTurno(v.despacho, v.turno))}</td><td>${esc(v.cargo)}</td>
+      <td>${esc(v.secretaria || "—")}</td><td>${fmt(v.fecha_desde)}</td><td>${v.fecha_hasta ? fmt(v.fecha_hasta) : "sigue vacante"}</td>
+      <td><button class="btn chico" data-id="${v.id}">Editar</button></td></tr>`).join("") || `<tr><td colspan="6" class="ayuda">No hay puestos vacantes cargados.</td></tr>`}</tbody></table></div>`;
+  $("#a-nuevo", el).onclick = () => formVacante({}, () => administrar("vacantes"));
+  $$("[data-id]", el).forEach((b) => (b.onclick = () => formVacante(vs.find((v) => v.id === +b.dataset.id), () => administrar("vacantes"))));
 }
 
 async function admCargos(el) {

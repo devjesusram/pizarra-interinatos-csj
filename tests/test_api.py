@@ -120,3 +120,48 @@ def test_admin_cambia_tope_y_turno(cliente, datos):
     assert desp["turno"] == "2º Turno"
     entrar(cliente, "oper")
     assert cliente.put("/api/cargos/UJIER", json={"max_interinatos_simultaneos": 3}).status_code == 403
+
+
+def test_flujo_vacante_por_api(cliente, datos, conn):
+    entrar(cliente, "oper")
+    despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["actuario1"],)).fetchone()["despacho_id"]
+    cuerpo = {"despacho_id": despacho, "cargo_codigo": "ACTUARIO", "secretaria": "Nº 2", "fecha_desde": "2026-11-16"}
+    assert cliente.post("/api/vacantes", json=cuerpo).status_code == 403        # solo ADMIN crea puestos
+    entrar(cliente)
+    vid = cliente.post("/api/vacantes", json=cuerpo).json()["id"]
+    entrar(cliente, "oper")                                                   # el operador asigna
+    disp = cliente.get(f"/api/disponibilidad?vacante_id={vid}&desde=2026-11-16&hasta=2026-11-30").json()
+    assert disp["candidatos"][0]["id"] == datos["actuario1"] and disp["candidatos"][0]["mismo_despacho"]
+    r = cliente.post("/api/interinatos", json={"vacante_id": vid, "interino_id": datos["actuario1"],
+                                               "fecha_inicio": "2026-11-16", "fecha_fin": "2026-11-30"})
+    assert r.status_code == 201
+    iid = r.json()["id"]
+    p = cliente.get("/api/pizarra?desde=2026-11-16&hasta=2026-11-29").json()
+    assert [v["id"] for v in p["vacantes"]] == [vid]
+    it = [i for i in p["interinatos"] if i["id"] == iid][0]
+    assert it["titular"] == "Puesto vacante (Sria. Nº 2)" and it["vacante_id"] == vid
+    det = cliente.get(f"/api/interinatos/{iid}").json()
+    assert det["vacante_secretaria"] == "Nº 2"
+    assert cliente.get(f"/api/vacantes/{vid}").json()["interinatos"][0]["id"] == iid
+    ics = cliente.get(f"/api/exportar.ics?desde=2026-11-01&hasta=2026-11-30&personal_id={datos['actuario1']}").text
+    assert "puesto vacante (Sria. N" in ics
+    # Cerrar el puesto (llegó una actuaria titular) con la versión vigente
+    entrar(cliente)
+    v = cliente.get(f"/api/vacantes/{vid}").json()
+    r = cliente.put(f"/api/vacantes/{vid}", json={**cuerpo, "fecha_hasta": "2026-11-30", "version": v["version"]})
+    assert r.status_code == 200
+    # Sin titular ni vacante -> error claro
+    r = cliente.post("/api/interinatos", json={"interino_id": datos["actuario1"],
+                                               "fecha_inicio": "2026-12-01", "fecha_fin": "2026-12-02"})
+    assert r.status_code == 409 and r.json()["hallazgos"][0]["regla"] == "R0"
+
+
+def test_personal_con_secretaria(cliente, datos, conn):
+    entrar(cliente)
+    despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["actuario1"],)).fetchone()["despacho_id"]
+    r = cliente.put(f"/api/personal/{datos['actuario1']}", json={
+        "nombre_completo": "Hartelsberger, Noelia Lucina", "cargo_codigo": "ACTUARIO",
+        "despacho_id": despacho, "secretaria": "Nº 1"})
+    assert r.status_code == 200
+    p = [x for x in cliente.get("/api/personal").json() if x["id"] == datos["actuario1"]][0]
+    assert p["secretaria"] == "Nº 1"

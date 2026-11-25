@@ -89,14 +89,16 @@ Entre como administrador y abra **👤 → ⚙ Administración**:
 
 1. **Despachos:** cargue los juzgados de la circunscripción, con su fuero, turno y localidad. Cada turno es un
    despacho, por ejemplo `Juzgado Civil y Comercial 1º Turno - Caacupé` con turno `1º Turno`.
-2. **Personal:** cargue a cada funcionario con su cargo y su despacho. Si un turno tiene dos secretarias, cargue
-   a las dos en el mismo despacho.
-3. **Cargos:** revise cuántos despachos puede cubrir a la vez una persona de cada cargo. Por defecto: jueces,
+2. **Personal:** cargue a cada funcionario con su cargo, su despacho y, si corresponde, su **Secretaría**
+   (Nº 1, Nº 2…). Si un turno tiene dos secretarias, cargue a las dos en el mismo despacho.
+3. **Vacantes:** si una Secretaría (u otro puesto) no tiene titular, cárguela como **puesto vacante**. Después,
+   quien quede a cargo se asigna con **+ Interinato → Cubre a: Un puesto vacante**.
+4. **Cargos:** revise cuántos despachos puede cubrir a la vez una persona de cada cargo. Por defecto: jueces,
    actuarios y secretarios sin límite; ujieres, de a uno.
-4. **Usuarios:** cree un usuario para cada compañero.
+5. **Usuarios:** cree un usuario para cada compañero.
    - **Operador:** carga licencias e interinatos.
    - **Administrador:** además gestiona el personal, los usuarios y la auditoría.
-5. **Días inhábiles:** cargue los feriados y la feria judicial del año.
+6. **Días inhábiles:** cargue los feriados y la feria judicial del año.
 
 ### Si cargó datos de ejemplo y quiere empezar con los datos reales
 

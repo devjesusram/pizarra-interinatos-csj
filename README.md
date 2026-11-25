@@ -29,6 +29,11 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 - **Selector de interinos:** muestra solo personas del mismo cargo, con su disponibilidad y el motivo cuando no
   están disponibles. Sugiere primero a los compañeros del mismo despacho o turno.
 - **Turnos:** cada despacho puede tener su turno, y la pizarra se puede filtrar por turno.
+- **Secretarías y puestos vacantes:** cada funcionario puede tener su Secretaría (Nº 1, Nº 2…). Un puesto sin
+  titular se carga como **vacante**, y quien queda a cargo se asigna como un interinato de puesto vacante. Si un
+  puesto vacante se queda sin nadie a cargo, aparece en las alertas.
+- **Juez responsable:** en la vista por despacho, cada encabezado muestra el juez y, si está ausente, quién está a
+  cargo ese día.
 - **Exportación `.ics`:** archivo descargable y enlace de suscripción por funcionario.
 - **Modo TV:** pantalla de solo lectura para un monitor en la oficina.
 - **Usuarios y roles:** OPERADOR / ADMIN, con **auditoría** completa.
@@ -47,9 +52,9 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 | R3 | Funcionario dado de baja | ⛔ Bloquea |
 | R4 | El interino está de licencia | ⛔ Bloquea |
 | R5 | El interino supera el límite de despachos a la vez de su cargo (configurable en Administración → Cargos; por defecto jueces, actuarios y secretarios sin límite, ujieres de a uno) | ⛔ Bloquea · ℹ️ informa cuántos despachos acumula |
-| R6 | El titular ya tiene interino en esas fechas | ⛔ Bloquea (también en la BD) |
+| R6 | El titular (o el puesto vacante) ya tiene a alguien a cargo en esas fechas | ⛔ Bloquea (también en la BD) |
 | R7 | El interino está ausente y cubierto por otro | ⛔ Bloquea |
-| R8 | El titular no tiene licencia registrada en parte del período | ⚠ Pide confirmación |
+| R8 | El titular no tiene licencia registrada en parte del período (o, si es un puesto vacante, el período queda fuera de la vacancia) | ⚠ Pide confirmación |
 | R9 | Solo entre pares (Juez↔Juez, Actuario↔Actuario…) | ⛔ Bloquea (también en la BD) |
 | R10 | Otro operador modificó el registro mientras se editaba | ⛔ Bloquea |
 | L1 | Dos licencias de la misma persona se cruzan | ⛔ Bloquea (también en la BD) |

@@ -304,3 +304,84 @@ def test_actualiza_una_base_version_1_sin_perder_datos(tmp_path, monkeypatch):
     respaldos = list((config.RESPALDOS_DIR / "antes-de-actualizar").glob("pizarra-db-v1-*.db"))
     assert len(respaldos) == 1                           # respaldo automático previo
     c.close()
+
+
+# ── Puestos vacantes (caso: una actuaria a cargo de las Secretarías Nº 1 y Nº 2) ──
+
+def _vacante(conn, datos, cargo="ACTUARIO", desde=0, hasta=None, secretaria="Nº 2"):
+    despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["actuario1"],)).fetchone()
+    return servicios.crear_vacante(conn, {"despacho_id": despacho["despacho_id"], "cargo_codigo": cargo,
+                                          "secretaria": secretaria, "fecha_desde": d(desde),
+                                          "fecha_hasta": d(hasta) if hasta is not None else None}, datos["uid"])
+
+
+def inter_vac(conn, datos, vacante_id, interino, ini, fin, confirmar=False):
+    return servicios.crear_interinato(conn, {"vacante_id": vacante_id, "interino_id": datos[interino],
+                                             "fecha_inicio": d(ini), "fecha_fin": d(fin)},
+                                      datos["uid"], confirmar_advertencias=confirmar)
+
+
+def test_actuaria_a_cargo_de_secretaria_vacante(conn, datos):
+    vid = _vacante(conn, datos)
+    iid, _ = inter_vac(conn, datos, vid, "actuario1", 0, 30)          # sin confirmación: no hay avisos
+    r = conn.execute("SELECT titular_id, vacante_id, cargo_codigo FROM interinatos WHERE id = ?", (iid,)).fetchone()
+    assert r == {"titular_id": None, "vacante_id": vid, "cargo_codigo": "ACTUARIO"}
+
+
+def test_vacante_solo_entre_pares(conn, datos):
+    vid = _vacante(conn, datos)
+    with pytest.raises(Bloqueado) as e:
+        inter_vac(conn, datos, vid, "secretario1", 0, 5)
+    assert reglas(e) == {"R9"}
+
+
+def test_vacante_con_una_sola_persona_a_cargo(conn, datos):
+    vid = _vacante(conn, datos)
+    inter_vac(conn, datos, vid, "actuario1", 0, 10)
+    with pytest.raises(Bloqueado) as e:
+        inter_vac(conn, datos, vid, "actuario2", 5, 6)
+    assert reglas(e) == {"R6"}
+    with pytest.raises(sqlite3.IntegrityError, match="INT_VACANTE_UNICA"):   # también en la base de datos
+        conn.execute("INSERT INTO interinatos (vacante_id, interino_id, cargo_codigo, fecha_inicio, fecha_fin) "
+                     "VALUES (?, ?, 'ACTUARIO', ?, ?)", (vid, datos["actuario2"], d(5).isoformat(), d(6).isoformat()))
+
+
+def test_vacante_aviso_fuera_del_periodo(conn, datos):
+    vid = _vacante(conn, datos, desde=3, hasta=8)
+    with pytest.raises(RequiereConfirmacion) as e:
+        inter_vac(conn, datos, vid, "actuario1", 0, 10)
+    assert reglas(e) == {"R8"} and "5 día(s)" in e.value.hallazgos[0].mensaje
+
+
+def test_interina_de_licencia_no_puede_cubrir_vacante(conn, datos):
+    vid = _vacante(conn, datos)
+    lic(conn, datos, "actuario1", 2, 4)
+    with pytest.raises(Bloqueado) as e:
+        inter_vac(conn, datos, vid, "actuario1", 0, 10)
+    assert "R4" in reglas(e)
+
+
+def test_cubrir_vacante_y_persona_a_la_vez_cuenta_para_el_limite(conn, datos):
+    conn.execute("UPDATE cargos SET max_interinatos_simultaneos = 1 WHERE codigo = 'ACTUARIO'")
+    vid = _vacante(conn, datos)
+    inter_vac(conn, datos, vid, "actuario1", 0, 10)
+    with pytest.raises(Bloqueado) as e:
+        inter(conn, datos, "actuario2", "actuario1", 5, 6)
+    assert reglas(e) == {"R5"}
+
+
+def test_alerta_vacante_sin_nadie_a_cargo(conn, datos):
+    vid = _vacante(conn, datos, desde=0, hasta=4)
+    inter_vac(conn, datos, vid, "actuario1", 0, 1)
+    a = servicios.alertas(conn, d(0))
+    v = a["vacantes_sin_cubrir"]
+    assert len(v) == 1 and v[0]["vacante_id"] == vid
+    assert v[0]["dias_sin_cubrir"] == 3 and v[0]["primer_dia"] == d(2).isoformat()
+
+
+def test_licencia_de_quien_cubre_vacante_marca_conflicto(conn, datos):
+    vid = _vacante(conn, datos)
+    iid, _ = inter_vac(conn, datos, vid, "actuario1", 0, 10)
+    _, avisos = lic(conn, datos, "actuario1", 3, 4)
+    assert [a.regla for a in avisos] == ["L2"] and "puesto vacante" in avisos[0].mensaje
+    assert conn.execute("SELECT estado FROM interinatos WHERE id = ?", (iid,)).fetchone()["estado"] == "EN_CONFLICTO"

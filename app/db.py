@@ -124,6 +124,135 @@ MIGRACIONES = [
                           AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
         END;
     """),
+    (3, "Secretaría en el personal; puestos vacantes e interinatos de puesto vacante", """
+        ALTER TABLE personal ADD COLUMN secretaria TEXT;          -- p. ej. 'Nº 1'
+
+        CREATE TABLE vacantes (
+          id            INTEGER PRIMARY KEY,
+          despacho_id   INTEGER NOT NULL REFERENCES despachos(id),
+          cargo_codigo  TEXT NOT NULL REFERENCES cargos(codigo),
+          secretaria    TEXT,
+          fecha_desde   TEXT NOT NULL CHECK (fecha_desde GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          fecha_hasta   TEXT CHECK (fecha_hasta IS NULL OR fecha_hasta >= fecha_desde),  -- NULL = sigue vacante
+          observaciones TEXT,
+          version       INTEGER NOT NULL DEFAULT 1,
+          creado_por    INTEGER REFERENCES usuarios(id),
+          creado_en     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        -- Un interinato cubre a una PERSONA ausente (titular_id) o a un PUESTO VACANTE (vacante_id).
+        -- SQLite no permite cambiar columnas: se reconstruye la tabla conservando los datos.
+        CREATE TABLE interinatos_nueva (
+          id               INTEGER PRIMARY KEY,
+          titular_id       INTEGER REFERENCES personal(id),
+          vacante_id       INTEGER REFERENCES vacantes(id),
+          interino_id      INTEGER NOT NULL REFERENCES personal(id),
+          cargo_codigo     TEXT NOT NULL REFERENCES cargos(codigo),
+          licencia_id      INTEGER REFERENCES licencias(id),
+          fecha_inicio     TEXT NOT NULL CHECK (fecha_inicio GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          fecha_fin        TEXT NOT NULL CHECK (fecha_fin GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          acto_designacion TEXT,
+          observaciones    TEXT,
+          estado           TEXT NOT NULL DEFAULT 'VIGENTE' CHECK (estado IN ('VIGENTE','EN_CONFLICTO','ANULADO')),
+          motivo_anulacion TEXT,
+          version          INTEGER NOT NULL DEFAULT 1,
+          creado_por       INTEGER REFERENCES usuarios(id),
+          creado_en        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          modificado_por   INTEGER REFERENCES usuarios(id),
+          modificado_en    TEXT,
+          CHECK (fecha_fin >= fecha_inicio),
+          CHECK ((titular_id IS NULL) <> (vacante_id IS NULL)),
+          CHECK (titular_id IS NULL OR titular_id <> interino_id)
+        );
+        INSERT INTO interinatos_nueva (id, titular_id, interino_id, cargo_codigo, licencia_id, fecha_inicio,
+               fecha_fin, acto_designacion, observaciones, estado, motivo_anulacion, version, creado_por,
+               creado_en, modificado_por, modificado_en)
+        SELECT id, titular_id, interino_id, cargo_codigo, licencia_id, fecha_inicio,
+               fecha_fin, acto_designacion, observaciones, estado, motivo_anulacion, version, creado_por,
+               creado_en, modificado_por, modificado_en
+        FROM interinatos;
+        DROP TABLE interinatos;
+        ALTER TABLE interinatos_nueva RENAME TO interinatos;
+
+        CREATE INDEX interinatos_titular_idx ON interinatos (titular_id, fecha_inicio);
+        CREATE INDEX interinatos_vacante_idx ON interinatos (vacante_id, fecha_inicio);
+        CREATE INDEX interinatos_interino_idx ON interinatos (interino_id, fecha_inicio);
+        CREATE INDEX interinatos_fechas_idx ON interinatos (fecha_inicio, fecha_fin);
+
+        -- Solo entre pares: el cargo cubierto coincide con el del interino y con el del
+        -- titular o el del puesto vacante.
+        CREATE TRIGGER int_pares_ins BEFORE INSERT ON interinatos
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_PARES')
+          WHERE (SELECT cargo_codigo FROM personal WHERE id = NEW.interino_id) IS NOT NEW.cargo_codigo
+             OR (NEW.titular_id IS NOT NULL AND (SELECT cargo_codigo FROM personal WHERE id = NEW.titular_id) IS NOT NEW.cargo_codigo)
+             OR (NEW.vacante_id IS NOT NULL AND (SELECT cargo_codigo FROM vacantes WHERE id = NEW.vacante_id) IS NOT NEW.cargo_codigo);
+        END;
+        CREATE TRIGGER int_pares_upd BEFORE UPDATE OF titular_id, vacante_id, interino_id, cargo_codigo ON interinatos
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_PARES')
+          WHERE (SELECT cargo_codigo FROM personal WHERE id = NEW.interino_id) IS NOT NEW.cargo_codigo
+             OR (NEW.titular_id IS NOT NULL AND (SELECT cargo_codigo FROM personal WHERE id = NEW.titular_id) IS NOT NEW.cargo_codigo)
+             OR (NEW.vacante_id IS NOT NULL AND (SELECT cargo_codigo FROM vacantes WHERE id = NEW.vacante_id) IS NOT NEW.cargo_codigo);
+        END;
+
+        -- Un titular tiene como máximo un interino por día
+        CREATE TRIGGER int_titular_unico_ins BEFORE INSERT ON interinatos
+        WHEN NEW.estado <> 'ANULADO' AND NEW.titular_id IS NOT NULL
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_TITULAR_UNICO')
+          WHERE EXISTS (SELECT 1 FROM interinatos i
+                        WHERE i.titular_id = NEW.titular_id AND i.estado <> 'ANULADO'
+                          AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
+        END;
+        CREATE TRIGGER int_titular_unico_upd BEFORE UPDATE OF titular_id, fecha_inicio, fecha_fin, estado ON interinatos
+        WHEN NEW.estado <> 'ANULADO' AND NEW.titular_id IS NOT NULL
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_TITULAR_UNICO')
+          WHERE EXISTS (SELECT 1 FROM interinatos i
+                        WHERE i.id <> NEW.id AND i.titular_id = NEW.titular_id AND i.estado <> 'ANULADO'
+                          AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
+        END;
+
+        -- Un puesto vacante tiene como máximo una persona a cargo por día
+        CREATE TRIGGER int_vacante_unica_ins BEFORE INSERT ON interinatos
+        WHEN NEW.estado <> 'ANULADO' AND NEW.vacante_id IS NOT NULL
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_VACANTE_UNICA')
+          WHERE EXISTS (SELECT 1 FROM interinatos i
+                        WHERE i.vacante_id = NEW.vacante_id AND i.estado <> 'ANULADO'
+                          AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
+        END;
+        CREATE TRIGGER int_vacante_unica_upd BEFORE UPDATE OF vacante_id, fecha_inicio, fecha_fin, estado ON interinatos
+        WHEN NEW.estado <> 'ANULADO' AND NEW.vacante_id IS NOT NULL
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_VACANTE_UNICA')
+          WHERE EXISTS (SELECT 1 FROM interinatos i
+                        WHERE i.id <> NEW.id AND i.vacante_id = NEW.vacante_id AND i.estado <> 'ANULADO'
+                          AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
+        END;
+
+        -- Exclusividad del interino cuando el tope de su cargo es 1
+        CREATE TRIGGER int_interino_unico_ins BEFORE INSERT ON interinatos
+        WHEN NEW.estado <> 'ANULADO'
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_INTERINO_UNICO')
+          WHERE (SELECT max_interinatos_simultaneos FROM cargos WHERE codigo = NEW.cargo_codigo) = 1
+            AND EXISTS (SELECT 1 FROM interinatos i
+                        WHERE i.interino_id = NEW.interino_id AND i.estado <> 'ANULADO'
+                          AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
+        END;
+        CREATE TRIGGER int_interino_unico_upd
+        BEFORE UPDATE OF interino_id, fecha_inicio, fecha_fin, estado, cargo_codigo ON interinatos
+        WHEN NEW.estado <> 'ANULADO'
+        BEGIN
+          SELECT RAISE(ABORT, 'INT_INTERINO_UNICO')
+          WHERE (SELECT max_interinatos_simultaneos FROM cargos WHERE codigo = NEW.cargo_codigo) = 1
+            AND EXISTS (SELECT 1 FROM interinatos i
+                        WHERE i.id <> NEW.id AND i.interino_id = NEW.interino_id AND i.estado <> 'ANULADO'
+                          AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
+        END;
+    """),
 ]
 VERSION_ACTUAL = MIGRACIONES[-1][0]
 

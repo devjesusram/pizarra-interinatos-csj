@@ -85,7 +85,8 @@ class LicenciaIn(BaseModel):
 
 
 class InterinatoIn(BaseModel):
-    titular_id: int
+    titular_id: Optional[int] = None        # persona ausente…
+    vacante_id: Optional[int] = None        # …o puesto vacante (uno de los dos)
     interino_id: int
     licencia_id: Optional[int] = None
     fecha_inicio: date
@@ -125,10 +126,23 @@ class PersonalIn(BaseModel):
     nombre_completo: str = Field(min_length=3)
     cargo_codigo: Literal["JUEZ", "ACTUARIO", "SECRETARIO", "UJIER"]
     despacho_id: int
+    secretaria: Optional[str] = None        # p. ej. "Nº 1"
     email: Optional[str] = None
     activo: bool = True
 
-    _limpiar = field_validator("email", mode="before")(_vacio_a_none)
+    _limpiar = field_validator("email", "secretaria", mode="before")(_vacio_a_none)
+
+
+class VacanteIn(BaseModel):
+    despacho_id: int
+    cargo_codigo: Literal["JUEZ", "ACTUARIO", "SECRETARIO", "UJIER"]
+    secretaria: Optional[str] = None
+    fecha_desde: date
+    fecha_hasta: Optional[date] = None      # vacío = sigue vacante
+    observaciones: Optional[str] = None
+    version: Optional[int] = None
+
+    _limpiar = field_validator("secretaria", "fecha_hasta", "observaciones", mode="before")(_vacio_a_none)
 
 
 class DespachoIn(BaseModel):
@@ -204,7 +218,7 @@ def catalogos(u=Depends(usuario_actual)):
         }
 
 
-SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id, p.email, p.activo,
+SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id, p.secretaria, p.email, p.activo,
                          p.ics_token, c.nombre AS cargo, c.orden_pizarra, d.nombre AS despacho,
                          d.fuero, d.localidad, d.turno
                   FROM personal p JOIN cargos c ON c.codigo = p.cargo_codigo
@@ -240,8 +254,8 @@ def _bool01(d: dict) -> dict:
 @app.post("/api/personal", status_code=201)
 def crear_personal(body: PersonalIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return _guardar(conn, """INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id, email, activo)
-                                 VALUES (:nombre_completo, :cargo_codigo, :despacho_id, :email, :activo)""",
+        return _guardar(conn, """INSERT INTO personal (nombre_completo, cargo_codigo, despacho_id, secretaria, email, activo)
+                                 VALUES (:nombre_completo, :cargo_codigo, :despacho_id, :secretaria, :email, :activo)""",
                         _bool01(body.model_dump()), "personal", "CREAR", u["id"])
 
 
@@ -250,7 +264,7 @@ def editar_personal(pid: int, body: PersonalIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
         return _guardar(conn, """UPDATE personal SET nombre_completo = :nombre_completo,
                                    cargo_codigo = :cargo_codigo, despacho_id = :despacho_id,
-                                   email = :email, activo = :activo WHERE id = :id""",
+                                   secretaria = :secretaria, email = :email, activo = :activo WHERE id = :id""",
                         _bool01({**body.model_dump(), "id": pid}), "personal", "MODIFICAR", u["id"], pid)
 
 
@@ -289,6 +303,49 @@ def editar_cargo(codigo: str, body: CargoIn, u=Depends(requiere_admin)):
             servicios.auditar(conn, "cargos", 0, "MODIFICAR",
                               {"cargo": codigo, "max_interinatos_simultaneos": tope}, u["id"])
     return {"ok": True}
+
+
+SQL_VACANTES = """SELECT v.*, c.nombre AS cargo, c.orden_pizarra, d.nombre AS despacho, d.fuero,
+                         d.localidad, d.turno
+                  FROM vacantes v JOIN cargos c ON c.codigo = v.cargo_codigo
+                  JOIN despachos d ON d.id = v.despacho_id"""
+
+
+@app.get("/api/vacantes")
+def listar_vacantes(solo_vigentes: bool = False, u=Depends(usuario_actual)):
+    with db.conexion() as conn:
+        if solo_vigentes:
+            return todos(conn, SQL_VACANTES + " WHERE v.fecha_hasta IS NULL OR v.fecha_hasta >= ? "
+                               "ORDER BY c.orden_pizarra, d.nombre", (iso(hoy()),))
+        return todos(conn, SQL_VACANTES + " ORDER BY (v.fecha_hasta IS NOT NULL), c.orden_pizarra, d.nombre")
+
+
+@app.get("/api/vacantes/{vid}")
+def ver_vacante(vid: int, u=Depends(usuario_actual)):
+    with db.conexion() as conn:
+        v = uno(conn, SQL_VACANTES + " WHERE v.id = ?", (vid,))
+        if not v:
+            raise HTTPException(404, "Puesto vacante inexistente")
+        v["interinatos"] = todos(conn, """
+            SELECT i.id, i.fecha_inicio, i.fecha_fin, i.estado, x.nombre_completo AS interino
+            FROM interinatos i JOIN personal x ON x.id = i.interino_id
+            WHERE i.vacante_id = ? AND i.estado <> 'ANULADO' ORDER BY i.fecha_inicio""", (vid,))
+        return v
+
+
+@app.post("/api/vacantes", status_code=201)
+def crear_vacante(body: VacanteIn, u=Depends(requiere_admin)):
+    with db.conexion() as conn:
+        return {"id": servicios.crear_vacante(conn, body.model_dump(), u["id"])}
+
+
+@app.put("/api/vacantes/{vid}")
+def editar_vacante(vid: int, body: VacanteIn, u=Depends(requiere_admin)):
+    if body.version is None:
+        raise HTTPException(400, "Falta la versión del registro.")
+    with db.conexion() as conn:
+        servicios.editar_vacante(conn, vid, body.model_dump(), body.version, u["id"])
+    return {"id": vid}
 
 
 @app.get("/api/dias-inhabiles")
@@ -374,6 +431,21 @@ def _rango(desde: date, hasta: date):
         raise HTTPException(400, "El rango máximo es de 400 días.")
 
 
+# Interinatos con la descripción de lo que cubren: una persona o un puesto vacante
+SQL_INTERINATOS_PIZARRA = """
+    SELECT i.id, i.titular_id, i.vacante_id, i.interino_id, i.licencia_id, i.fecha_inicio, i.fecha_fin,
+           i.estado, i.version, x.nombre_completo AS interino,
+           coalesce(t.nombre_completo,
+                    'Puesto vacante' || CASE WHEN v.secretaria IS NOT NULL THEN ' (Sria. ' || v.secretaria || ')' ELSE '' END)
+             AS titular,
+           dt.nombre AS despacho_titular
+    FROM interinatos i
+    LEFT JOIN personal t ON t.id = i.titular_id
+    LEFT JOIN vacantes v ON v.id = i.vacante_id
+    JOIN personal x ON x.id = i.interino_id
+    JOIN despachos dt ON dt.id = coalesce(t.despacho_id, v.despacho_id)"""
+
+
 @app.get("/api/pizarra")
 def pizarra(desde: date, hasta: date, u=Depends(usuario_actual)):
     _rango(desde, hasta)
@@ -386,18 +458,13 @@ def pizarra(desde: date, hasta: date, u=Depends(usuario_actual)):
                    l.version
             FROM licencias l JOIN tipos_licencia t ON t.id = l.tipo_licencia_id
             WHERE l.estado = 'VIGENTE' AND l.fecha_inicio <= :hasta AND l.fecha_fin >= :desde""", p), "tiene_adjunto")
-        interinatos = todos(conn, """
-            SELECT i.id, i.titular_id, i.interino_id, i.licencia_id, i.fecha_inicio, i.fecha_fin,
-                   i.estado, i.version, t.nombre_completo AS titular, x.nombre_completo AS interino,
-                   dt.nombre AS despacho_titular
-            FROM interinatos i
-            JOIN personal t ON t.id = i.titular_id
-            JOIN personal x ON x.id = i.interino_id
-            JOIN despachos dt ON dt.id = t.despacho_id
+        interinatos = todos(conn, SQL_INTERINATOS_PIZARRA + """
             WHERE i.estado <> 'ANULADO' AND i.fecha_inicio <= :hasta AND i.fecha_fin >= :desde""", p)
+        vacantes = todos(conn, SQL_VACANTES + """
+            WHERE v.fecha_desde <= :hasta AND (v.fecha_hasta IS NULL OR v.fecha_hasta >= :desde)""", p)
         inhabiles = todos(conn, "SELECT fecha, descripcion FROM dias_inhabiles WHERE fecha BETWEEN :desde AND :hasta", p)
     return {"desde": desde, "hasta": hasta, "hoy": hoy(), "personal": personal,
-            "licencias": licencias, "interinatos": interinatos, "inhabiles": inhabiles}
+            "licencias": licencias, "interinatos": interinatos, "vacantes": vacantes, "inhabiles": inhabiles}
 
 
 @app.get("/api/alertas")
@@ -407,18 +474,25 @@ def ver_alertas(u=Depends(usuario_actual)):
 
 
 @app.get("/api/disponibilidad")
-def disponibilidad(titular_id: int, desde: date, hasta: date, excluir_id: Optional[int] = None,
+def disponibilidad(desde: date, hasta: date, titular_id: Optional[int] = None,
+                   vacante_id: Optional[int] = None, excluir_id: Optional[int] = None,
                    u=Depends(usuario_actual)):
-    """Candidatos del mismo cargo, con su estado según las mismas reglas que al guardar."""
+    """Candidatos del mismo cargo, con su estado según las mismas reglas que al guardar.
+    Se consulta para una persona ausente (titular_id) o para un puesto vacante (vacante_id)."""
     _rango(desde, hasta)
+    if (titular_id is None) == (vacante_id is None):
+        raise HTTPException(400, "Indique titular_id o vacante_id.")
     with db.conexion() as conn:
-        tit = uno(conn, SQL_PERSONAL + " WHERE p.id = ?", (titular_id,))
+        if vacante_id is not None:
+            tit = uno(conn, SQL_VACANTES + " WHERE v.id = ?", (vacante_id,))
+        else:
+            tit = uno(conn, SQL_PERSONAL + " WHERE p.id = ?", (titular_id,))
         if not tit:
-            raise HTTPException(404, "Titular inexistente")
+            raise HTTPException(404, "Titular o puesto vacante inexistente")
         candidatos = []
         for c in todos(conn, SQL_PERSONAL + " WHERE p.activo = 1 AND p.cargo_codigo = ? AND p.id <> ?",
-                       (tit["cargo_codigo"], titular_id)):
-            hall = validar_interinato(conn, titular_id, c["id"], desde, hasta, excluir_id)
+                       (tit["cargo_codigo"], titular_id or 0)):
+            hall = validar_interinato(conn, titular_id, c["id"], desde, hasta, excluir_id, vacante_id)
             # R6 y R8 dependen del titular, no del candidato: se informan aparte
             propios = [h for h in hall if h.regla not in ("R6", "R8")]
             if any(h.nivel.value == "BLOQUEO" for h in propios):
@@ -429,6 +503,7 @@ def disponibilidad(titular_id: int, desde: date, hasta: date, excluir_id: Option
                 estado = "DISPONIBLE"
             candidatos.append({"id": c["id"], "nombre_completo": c["nombre_completo"],
                                "despacho": c["despacho"], "turno": c["turno"], "localidad": c["localidad"],
+                               "secretaria": c["secretaria"],
                                "mismo_despacho": c["despacho_id"] == tit["despacho_id"],
                                "estado": estado, "hallazgos": [h.a_dict() for h in propios]})
         # Primero los disponibles; entre ellos, los compañeros del mismo despacho (turno)
@@ -438,7 +513,7 @@ def disponibilidad(titular_id: int, desde: date, hasta: date, excluir_id: Option
                                        c["localidad"] != tit["localidad"], c["nombre_completo"]))
         generales = []
         if candidatos:
-            hall = validar_interinato(conn, titular_id, candidatos[0]["id"], desde, hasta, excluir_id)
+            hall = validar_interinato(conn, titular_id, candidatos[0]["id"], desde, hasta, excluir_id, vacante_id)
             generales = [h.a_dict() for h in hall if h.regla in ("R6", "R8")]
     return {"titular": booleanos(tit, "activo"), "candidatos": candidatos, "generales": generales}
 
@@ -529,10 +604,13 @@ def ver_interinato(iid: int, u=Depends(usuario_actual)):
     with db.conexion() as conn:
         r = uno(conn, """
             SELECT i.*, t.nombre_completo AS titular, x.nombre_completo AS interino,
+                   v.secretaria AS vacante_secretaria, v.fecha_desde AS vacante_desde,
                    dt.nombre AS despacho_titular, dx.nombre AS despacho_interino, c.nombre AS cargo,
                    uc.nombre AS creado_por_nombre, um.nombre AS modificado_por_nombre
             FROM interinatos i
-            JOIN personal t ON t.id = i.titular_id JOIN despachos dt ON dt.id = t.despacho_id
+            LEFT JOIN personal t ON t.id = i.titular_id
+            LEFT JOIN vacantes v ON v.id = i.vacante_id
+            JOIN despachos dt ON dt.id = coalesce(t.despacho_id, v.despacho_id)
             JOIN personal x ON x.id = i.interino_id JOIN despachos dx ON dx.id = x.despacho_id
             JOIN cargos c ON c.codigo = i.cargo_codigo
             LEFT JOIN usuarios uc ON uc.id = i.creado_por

@@ -188,6 +188,15 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
   background: repeating-linear-gradient(45deg, #f3e5f5 0 6px, #e1bee7 6px 12px);
   color: var(--conflicto); border-color: var(--conflicto); font-weight: 700;
 }
+.ev-vacante {
+  background: repeating-linear-gradient(135deg, #eceff3 0 8px, #dde2e9 8px 10px);
+  color: #46505f; border: 1px solid #b9c0cc; font-weight: 700;
+}
+.fila.vacante .nombre .n { font-style: italic; color: #46505f; }
+.grupo .juez {
+  margin-left: auto; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--primario);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%;
+}
 .vacio { padding: 40px; text-align: center; color: var(--texto-suave); }
 
 .leyenda {
@@ -203,6 +212,7 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .leyenda .l-cub::before { background: var(--cubierto-fondo); border: 1px solid #a9d5ac; }
 .leyenda .l-sin::before { background: var(--sin-cubrir-fondo); border: 1px dashed var(--sin-cubrir); }
 .leyenda .l-con::before { background: repeating-linear-gradient(45deg, #f3e5f5 0 3px, #e1bee7 3px 6px); border: 1px solid var(--conflicto); }
+.leyenda .l-vac::before { background: repeating-linear-gradient(135deg, #eceff3 0 4px, #dde2e9 4px 5px); border: 1px solid #b9c0cc; }
 .leyenda .l-inh::before { background: var(--inhabil); border: 1px solid var(--borde); }
 
 /* ── Modales ────────────────────────────────────────────── */
