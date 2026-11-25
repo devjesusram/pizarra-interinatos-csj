@@ -134,6 +134,7 @@ async function iniciar() {
   E.hoy = E.yo.hoy;
   E.desde = lunesDe(E.hoy);
   $("#nombre-usuario").textContent = E.yo.nombre;
+  $("#m-version").textContent = `Versión ${E.yo.version}`;
   $("#circunscripcion").textContent = "· " + E.yo.circunscripcion;
   $("#m-admin").hidden = E.yo.rol !== "ADMIN";
   $("#largo").value = String(E.largo);

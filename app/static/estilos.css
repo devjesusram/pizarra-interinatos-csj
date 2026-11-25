@@ -73,6 +73,7 @@ a { color: var(--primario); }
   color: var(--texto); padding: 8px 14px; border-radius: 0;
 }
 .menu button:hover { background: var(--fondo); }
+.menu .version { padding: 6px 14px 4px; font-size: 12px; color: var(--texto-suave); border-top: 1px solid var(--borde); }
 
 .herramientas {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

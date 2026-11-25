@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import auth, config, db, ics, servicios
+from . import __version__, auth, config, db, ics, servicios
 from .auth import requiere_admin, usuario_actual
 from .db import booleanos, escritura, iso, todos, uno
 from .validaciones import Bloqueado, ConflictoVersion, RequiereConfirmacion, validar_interinato
@@ -190,7 +190,7 @@ def logout(request: Request, response: Response):
 
 @app.get("/api/yo")
 def yo(u=Depends(usuario_actual)):
-    return {**u, "hoy": hoy(), "circunscripcion": config.NOMBRE_CIRCUNSCRIPCION}
+    return {**u, "hoy": hoy(), "circunscripcion": config.NOMBRE_CIRCUNSCRIPCION, "version": __version__}
 
 
 @app.post("/api/yo/clave")
@@ -733,8 +733,13 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.middleware("http")
 async def cabeceras(request: Request, call_next):
     resp = await call_next(request)
-    if request.url.path.startswith("/api/"):
+    ruta = request.url.path
+    if ruta.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store"
+    elif ruta.startswith("/static/") or ruta in ("/", "/login"):
+        # El navegador puede guardar la página, pero debe preguntar si cambió antes de usarla:
+        # así, después de actualizar la Pizarra, todos ven la versión nueva sin Ctrl+F5.
+        resp.headers["Cache-Control"] = "no-cache"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
     return resp

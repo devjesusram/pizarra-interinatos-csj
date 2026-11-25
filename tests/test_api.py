@@ -197,3 +197,11 @@ def test_no_se_elimina_funcionario_con_historial(cliente, datos):
     for quien in ("ujier1", "ujier2", "ujier3"):                    # licencia, titular e interino
         r = cliente.delete(f"/api/personal/{datos[quien]}")
         assert r.status_code == 409 and "Desactívelo" in r.json()["detail"]
+
+
+def test_version_y_cache_de_la_pagina(cliente, datos):
+    from app import __version__
+    entrar(cliente)
+    assert cliente.get("/api/yo").json()["version"] == __version__
+    for ruta in ("/", "/static/app.js", "/static/estilos.css"):
+        assert cliente.get(ruta).headers["cache-control"] == "no-cache"
