@@ -225,10 +225,36 @@ SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id,
                   JOIN despachos d ON d.id = p.despacho_id"""
 
 
+SQL_REGISTROS_PERSONA = """(SELECT count(*) FROM licencias l WHERE l.personal_id = p.id)
+                           + (SELECT count(*) FROM interinatos i WHERE i.titular_id = p.id OR i.interino_id = p.id)"""
+
+
 @app.get("/api/personal")
 def listar_personal(u=Depends(usuario_actual)):
     with db.conexion() as conn:
-        return booleanos(todos(conn, SQL_PERSONAL + " ORDER BY c.orden_pizarra, p.nombre_completo"), "activo")
+        filas = todos(conn, SQL_PERSONAL.replace("SELECT p.id,", f"SELECT ({SQL_REGISTROS_PERSONA}) AS registros, p.id,", 1)
+                      + " ORDER BY c.orden_pizarra, p.nombre_completo")
+        return booleanos(filas, "activo")
+
+
+@app.delete("/api/personal/{pid}")
+def eliminar_personal(pid: int, u=Depends(requiere_admin)):
+    """Borra un funcionario SOLO si no tiene ningún registro asociado (pensado para duplicados
+    creados por error). Con historial, hay que desactivarlo."""
+    with db.conexion() as conn, escritura(conn):
+        p = uno(conn, f"SELECT p.*, ({SQL_REGISTROS_PERSONA}) AS registros FROM personal p WHERE p.id = ?", (pid,))
+        if not p:
+            raise HTTPException(404, "Funcionario inexistente")
+        if p["registros"]:
+            raise HTTPException(409, f"No se puede eliminar a {p['nombre_completo']}: tiene {p['registros']} "
+                                     "licencia(s) o interinato(s) registrados. Desactívelo en su lugar.")
+        try:
+            conn.execute("DELETE FROM personal WHERE id = ?", (pid,))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "No se puede eliminar: tiene registros asociados. Desactívelo en su lugar.")
+        p.pop("registros")
+        servicios.auditar(conn, "personal", pid, "ELIMINAR", p, u["id"])
+    return {"ok": True}
 
 
 def _guardar(conn, sql, params, tabla, accion, uid, registro_id=None):

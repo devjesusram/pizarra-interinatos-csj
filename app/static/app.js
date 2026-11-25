@@ -943,8 +943,25 @@ async function admPersonal(el) {
     <input type="search" id="a-buscar" placeholder="Buscar…"></div>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Nombre</th><th>Cargo</th><th>Despacho</th><th>Sria.</th><th>Localidad</th><th></th></tr></thead>
     <tbody>${ps.map((p) => `<tr class="${p.activo ? "" : "inactivo"}" data-q="${esc((p.nombre_completo + p.despacho).toLowerCase())}"><td>${esc(p.nombre_completo)}</td><td>${esc(p.cargo)}</td><td>${esc(conTurno(p.despacho, p.turno))}</td><td>${esc(p.secretaria || "—")}</td><td>${esc(p.localidad)}</td>
-      <td><button class="btn chico" data-id="${p.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
+      <td style="white-space:nowrap"><button class="btn chico" data-id="${p.id}">Editar</button>
+        ${p.registros ? "" : `<button class="btn chico peligro" data-borrar="${p.id}" title="Solo para funcionarios sin licencias ni interinatos (por ejemplo, duplicados)">Eliminar</button>`}</td></tr>`).join("")}</tbody></table></div>
+    <p class="ayuda">«Eliminar» solo aparece en funcionarios sin licencias ni interinatos (por ejemplo, cargados por error).
+      Para quien tiene historial, use «Editar» y desmarque «Activo».</p>`;
   $("#a-nuevo", el).onclick = () => { if (!E.cat.despachos.length) return toast("Primero cargue al menos un despacho."); editar({ activo: true }); };
+  $$("[data-borrar]", el).forEach((b) => (b.onclick = async () => {
+    const p = ps.find((x) => x.id === +b.dataset.borrar);
+    const ok = await confirmar("Eliminar funcionario",
+      `<p>¿Eliminar definitivamente a <b>${esc(p.nombre_completo)}</b> (${esc(p.cargo)}, ${esc(conTurno(p.despacho, p.turno))})?</p>
+       <p class="ayuda">No tiene licencias ni interinatos, así que no se pierde historial. La eliminación queda registrada en la auditoría.</p>`,
+      "Eliminar");
+    if (!ok) return;
+    try {
+      await api("DELETE", `/api/personal/${p.id}`);
+      toast(`${p.nombre_completo} fue eliminado.`);
+      await refrescarCatalogos();
+      administrar("personal");
+    } catch (e) { mostrarError(e); }
+  }));
   $("#a-buscar", el).oninput = (e) => $$("tbody tr", el).forEach((tr) => (tr.hidden = !tr.dataset.q.includes(e.target.value.toLowerCase())));
   $$("[data-id]", el).forEach((b) => (b.onclick = () => editar(ps.find((p) => p.id === +b.dataset.id))));
 }

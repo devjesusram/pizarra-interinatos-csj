@@ -165,3 +165,35 @@ def test_personal_con_secretaria(cliente, datos, conn):
     assert r.status_code == 200
     p = [x for x in cliente.get("/api/personal").json() if x["id"] == datos["actuario1"]][0]
     assert p["secretaria"] == "Nº 1"
+
+
+def test_eliminar_funcionario_duplicado(cliente, datos, conn):
+    entrar(cliente)
+    despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["juez1"],)).fetchone()["despacho_id"]
+    dup = cliente.post("/api/personal", json={"nombre_completo": "Juez 1 (duplicado)", "cargo_codigo": "JUEZ",
+                                              "despacho_id": despacho}).json()["id"]
+    fila = [p for p in cliente.get("/api/personal").json() if p["id"] == dup][0]
+    assert fila["registros"] == 0                                     # el botón Eliminar se muestra
+    entrar(cliente, "oper")
+    assert cliente.delete(f"/api/personal/{dup}").status_code == 403  # solo ADMIN
+    entrar(cliente)
+    assert cliente.delete(f"/api/personal/{dup}").status_code == 200
+    assert not [p for p in cliente.get("/api/personal").json() if p["id"] == dup]
+    aud = conn.execute("SELECT datos FROM auditoria WHERE tabla = 'personal' AND registro_id = ? AND accion = 'ELIMINAR'",
+                       (dup,)).fetchone()
+    assert "Juez 1 (duplicado)" in aud["datos"]                       # queda constancia de lo borrado
+    assert cliente.delete(f"/api/personal/{dup}").status_code == 404
+
+
+def test_no_se_elimina_funcionario_con_historial(cliente, datos):
+    entrar(cliente)
+    cliente.post("/api/licencias", json={"personal_id": datos["ujier1"], "tipo_licencia_id": 1,
+                                         "fecha_inicio": "2026-11-16", "fecha_fin": "2026-11-17", "organo_aprobador": "RRHH"})
+    cliente.post("/api/interinatos", json={"titular_id": datos["ujier2"], "interino_id": datos["ujier3"],
+                                           "fecha_inicio": "2026-11-16", "fecha_fin": "2026-11-17",
+                                           "confirmar_advertencias": True})
+    registros = {p["id"]: p["registros"] for p in cliente.get("/api/personal").json()}
+    assert registros[datos["ujier1"]] == 1 and registros[datos["ujier3"]] == 1 and registros[datos["ujier2"]] == 1
+    for quien in ("ujier1", "ujier2", "ujier3"):                    # licencia, titular e interino
+        r = cliente.delete(f"/api/personal/{datos[quien]}")
+        assert r.status_code == 409 and "Desactívelo" in r.json()["detail"]

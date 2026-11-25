@@ -171,6 +171,8 @@ sesión.
 | Desde otra PC no abre | Pruebe `http://localhost:8080` **en el servidor**. Si ahí funciona, el problema es la red o el firewall: desde la otra PC ejecute `ping 172.31.60.254`. Si hay un antivirus institucional, puede estar bloqueando el puerto. |
 | No abre ni en el servidor | Abra `C:\Pizarra\datos\registros\pizarra.log` con el Bloc de notas y fíjese en las últimas líneas. |
 | "Address already in use" o el puerto está ocupado | Otro programa usa el puerto 8080. Cambie `PUERTO=8090` en `configuracion.txt` y vuelva a ejecutar `3-instalar-como-servicio.bat`. |
+| Cargué un funcionario duplicado o por error | Administración → Personal → **Eliminar**. El botón solo aparece si no tiene licencias ni interinatos; si los tiene, páselos al funcionario correcto (Editar en cada uno) o desactívelo. |
+| Un funcionario dejó el cargo (jubilación, traslado) | Administración → Personal → Editar → desmarque **Activo**. Se conserva su historial. Antes, revise sus interinatos y licencias futuras, y cargue su puesto como vacante si queda sin titular. |
 | Olvidé la contraseña del administrador | Ejecute `1-crear-administrador.bat` con el mismo usuario y elija una contraseña nueva. |
 | Un operador olvidó su contraseña | Un administrador entra en Administración → Usuarios → Editar y le pone una nueva. |
 | Detener la Pizarra un momento | Programador de tareas → "Pizarra de Interinatos" → Finalizar. Para quitarla del todo, use `desinstalar-servicio.bat`. |
