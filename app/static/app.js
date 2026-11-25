@@ -332,7 +332,8 @@ function dibujarPizarra() {
     if (ev.carriles.length || !soloNov) g.filas.push({ p, ev });
   }
   const lista = [...grupos.entries()].sort((a, b) => (a[1].orden < b[1].orden ? -1 : 1));
-  if (!porCargo) lista.forEach(([, g]) => g.filas.sort((a, b) => a.p.orden_pizarra - b.p.orden_pizarra || !!a.p.esVacante - !!b.p.esVacante));
+  if (!porCargo) lista.forEach(([, g]) => g.filas.sort((a, b) => a.p.orden_pizarra - b.p.orden_pizarra
+    || String(a.p.secretaria || "~").localeCompare(String(b.p.secretaria || "~")) || !!a.p.esVacante - !!b.p.esVacante));
 
   const estiloDias = `style="--dias:${dias.length}"`;
   let html = `<div class="grilla"><div class="fila cabecera" ${estiloDias}><div class="esquina">${porCargo ? "Cargo / Funcionario" : "Despacho / Funcionario"}</div>`;
@@ -984,9 +985,115 @@ async function admDespachos(el) {
   });
   el.innerHTML = `<button class="btn primario" id="a-nuevo" style="margin-bottom:8px">+ Despacho</button>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Despacho</th><th>Fuero</th><th>Turno</th><th>Localidad</th><th></th></tr></thead>
-    <tbody>${ds.map((d) => `<tr class="${d.activo ? "" : "inactivo"}"><td>${esc(d.nombre)}</td><td>${esc(d.fuero)}</td><td>${esc(d.turno || "—")}</td><td>${esc(d.localidad)}</td><td><button class="btn chico" data-id="${d.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
+    <tbody>${ds.map((d) => `<tr class="${d.activo ? "" : "inactivo"}"><td>${esc(d.nombre)}</td><td>${esc(d.fuero)}</td><td>${esc(d.turno || "—")}</td><td>${esc(d.localidad)}</td>
+      <td style="white-space:nowrap"><button class="btn chico primario" data-equipo="${d.id}">Equipo</button>
+        <button class="btn chico" data-id="${d.id}">Editar</button>
+        ${d.registros ? "" : `<button class="btn chico peligro" data-borrar="${d.id}">Eliminar</button>`}</td></tr>`).join("")}</tbody></table></div>
+    <p class="ayuda">«Equipo» muestra y asigna al juez, actuarios, secretarias y ujier del despacho. «Eliminar» aparece solo en
+      despachos sin funcionarios ni puestos vacantes.</p>`;
   $("#a-nuevo", el).onclick = () => editar({ activo: true });
   $$("[data-id]", el).forEach((b) => (b.onclick = () => editar(ds.find((d) => d.id === +b.dataset.id))));
+  $$("[data-equipo]", el).forEach((b) => (b.onclick = () => equipoDespacho(+b.dataset.equipo)));
+  $$("[data-borrar]", el).forEach((b) => (b.onclick = () => {
+    const d = ds.find((x) => x.id === +b.dataset.borrar);
+    eliminarRegistro(`/api/despachos/${d.id}`, "Eliminar despacho", `el despacho <b>${esc(conTurno(d.nombre, d.turno))}</b>`, async () => {
+      await refrescarCatalogos(); administrar("despachos");
+    });
+  }));
+}
+
+/** Confirma y elimina; el servidor vuelve a comprobar que no haya registros asociados. */
+async function eliminarRegistro(url, titulo, queHtml, despues) {
+  const ok = await confirmar(titulo, `<p>¿Eliminar definitivamente ${queHtml}?</p>
+    <p class="ayuda">La eliminación queda registrada en la auditoría.</p>`, "Eliminar");
+  if (!ok) return;
+  try {
+    await api("DELETE", url);
+    toast("Eliminado.");
+    await despues();
+  } catch (e) { mostrarError(e); }
+}
+
+/** Equipo de un despacho: juez, actuarios, secretarias (con su Secretaría) y ujier; permite sumar funcionarios. */
+async function equipoDespacho(did) {
+  let ps;
+  try { ps = await api("GET", "/api/personal"); } catch (e) { return mostrarError(e); }
+  const d = E.cat.despachos.find((x) => x.id === did);
+  const orden = (c) => E.cat.cargos.find((x) => x.codigo === c)?.orden_pizarra ?? 9;
+  const equipo = ps.filter((p) => p.despacho_id === did)
+    .sort((a, b) => orden(a.cargo_codigo) - orden(b.cargo_codigo) || String(a.secretaria || "~").localeCompare(String(b.secretaria || "~"))
+                    || a.nombre_completo.localeCompare(b.nombre_completo));
+  const otros = ps.filter((p) => p.despacho_id !== did && p.activo);
+  const srias = ["", "Nº 1", "Nº 2", "Nº 3", "Nº 4"];
+  const selSria = (actual, attrs) => `<select ${attrs}>${[...new Set([...srias, actual || ""])].map((x) =>
+    `<option value="${esc(x)}" ${x === (actual || "") ? "selected" : ""}>${x ? "Sria. " + esc(x) : "—"}</option>`).join("")}</select>`;
+  let vacs = [];
+  try { vacs = (await api("GET", "/api/vacantes?solo_vigentes=true")).filter((v) => v.despacho_id === did); } catch (e) { /* sin vacantes */ }
+  const opcionesOtros = E.cat.cargos.map((c) => {
+    const xs = otros.filter((p) => p.cargo_codigo === c.codigo);
+    return xs.length ? `<optgroup label="${esc(c.nombre)}">${xs.map((p) => `<option value="${p.id}">${esc(p.nombre_completo)} — hoy en ${esc(conTurno(p.despacho, p.turno))}</option>`).join("")}</optgroup>` : "";
+  }).join("");
+  const html = `<p><b>${esc(conTurno(d.nombre, d.turno))}</b> · ${esc(d.fuero)} · ${esc(d.localidad)}</p>
+    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Cargo</th><th>Funcionario</th><th>Secretaría</th><th></th></tr></thead><tbody>
+    ${equipo.map((p) => `<tr class="${p.activo ? "" : "inactivo"}"><td>${esc(p.cargo)}</td><td>${esc(p.nombre_completo)}${p.activo ? "" : " (dado de baja)"}</td>
+      <td>${["ACTUARIO", "SECRETARIO"].includes(p.cargo_codigo) || p.secretaria ? selSria(p.secretaria, `data-sria="${p.id}"`) : "—"}</td><td><button class="btn chico" data-editar="${p.id}">Editar</button></td></tr>`).join("")
+      || `<tr><td colspan="4" class="ayuda">Todavía no hay funcionarios en este despacho.</td></tr>`}
+    ${vacs.map((v) => `<tr><td>${esc(v.cargo)}</td><td><i>⚪ Puesto vacante</i></td><td>${v.secretaria ? "Sria. " + esc(v.secretaria) : "—"}</td><td></td></tr>`).join("")}
+    </tbody></table></div>
+    <h3 style="margin:16px 0 6px;font-size:14px">Agregar al equipo</h3>
+    <div class="fila-campos"><select id="eq-persona" style="flex:1;min-width:240px"><option value="">— Elija un funcionario de otro despacho —</option>${opcionesOtros}</select>
+      ${selSria("", 'id="eq-sria"')}<button class="btn primario" id="eq-agregar">Agregar</button></div>
+    <p class="ayuda">El funcionario pasa a este despacho (deja el anterior). Para alguien que todavía no está cargado, use «+ Nuevo funcionario».</p>`;
+  const { cuerpo } = modal($("#modal"), { titulo: "Equipo del despacho", ancho: true, cuerpo: html, pie: [
+    { texto: "← Volver a Despachos", accion: () => { setTimeout(() => administrar("despachos"), 0); } },
+    { texto: "+ Nuevo funcionario", accion: () => { nuevoEnDespacho(); return false; } },
+  ] });
+  const guardarPersona = async (p, cambios, mensaje) => {
+    await api("PUT", `/api/personal/${p.id}`, { nombre_completo: p.nombre_completo, cargo_codigo: p.cargo_codigo,
+      despacho_id: p.despacho_id, secretaria: p.secretaria, email: p.email, activo: p.activo, ...cambios });
+    toast(mensaje);
+    await refrescarCatalogos();
+    equipoDespacho(did);
+  };
+  $$("[data-sria]", cuerpo).forEach((sel) => (sel.onchange = async () => {
+    const p = equipo.find((x) => x.id === +sel.dataset.sria);
+    try { await guardarPersona(p, { secretaria: sel.value || null }, `Secretaría de ${p.nombre_completo} actualizada.`); }
+    catch (e) { mostrarError(e); }
+  }));
+  $$("[data-editar]", cuerpo).forEach((b) => (b.onclick = () => {
+    const p = equipo.find((x) => x.id === +b.dataset.editar);
+    formSimple("Editar funcionario", [
+      { k: "nombre_completo", t: "Nombre completo", req: true, min: 3 },
+      { k: "cargo_codigo", t: "Cargo", tipo: "select", opciones: E.cat.cargos.map((c) => [c.codigo, c.nombre]), req: true },
+      { k: "despacho_id", t: "Despacho", tipo: "select", opciones: E.cat.despachos.map((x) => [x.id, conTurno(x.nombre, x.turno)]), req: true, num: true },
+      { k: "secretaria", t: "Secretaría", lista: srias.filter(Boolean) },
+      { k: "email", t: "Correo", tipo: "email" },
+      { k: "activo", t: "Estado", tipo: "check", ayuda: "Activo" },
+    ], p, async (x) => { await guardarPersona(p, x, "Funcionario actualizado."); });
+  }));
+  $("#eq-agregar", cuerpo).onclick = async () => {
+    const p = otros.find((x) => x.id === +$("#eq-persona", cuerpo).value);
+    if (!p) return toast("Elija un funcionario.");
+    const ok = await confirmar("Agregar al equipo", `<p><b>${esc(p.nombre_completo)}</b> (${esc(p.cargo)}) pasa de
+      <b>${esc(conTurno(p.despacho, p.turno))}</b> a <b>${esc(conTurno(d.nombre, d.turno))}</b>.</p>
+      <p class="ayuda">Sus licencias e interinatos se conservan.</p>`, "Agregar");
+    if (!ok) return;
+    try { await guardarPersona(p, { despacho_id: did, secretaria: $("#eq-sria", cuerpo).value || null }, `${p.nombre_completo} se agregó al equipo.`); }
+    catch (e) { mostrarError(e); }
+  };
+  function nuevoEnDespacho() {
+    formSimple(`Nuevo funcionario en ${conTurno(d.nombre, d.turno)}`, [
+      { k: "nombre_completo", t: "Nombre completo", req: true, min: 3, ayuda: "Formato sugerido: Apellido, Nombre" },
+      { k: "cargo_codigo", t: "Cargo", tipo: "select", opciones: E.cat.cargos.map((c) => [c.codigo, c.nombre]), req: true },
+      { k: "secretaria", t: "Secretaría", lista: srias.filter(Boolean), ayuda: "Opcional. Ej.: Nº 1" },
+      { k: "email", t: "Correo", tipo: "email" },
+    ], { cargo_codigo: "SECRETARIO" }, async (x) => {
+      await api("POST", "/api/personal", { ...x, despacho_id: did, activo: true });
+      toast("Funcionario agregado.");
+      await refrescarCatalogos();
+      equipoDespacho(did);
+    });
+  }
 }
 
 async function admVacantes(el) {
@@ -998,7 +1105,16 @@ async function admVacantes(el) {
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Despacho</th><th>Cargo</th><th>Secretaría</th><th>Desde</th><th>Hasta</th><th></th></tr></thead>
     <tbody>${vs.map((v) => `<tr class="${v.fecha_hasta && v.fecha_hasta < E.hoy ? "inactivo" : ""}"><td>${esc(conTurno(v.despacho, v.turno))}</td><td>${esc(v.cargo)}</td>
       <td>${esc(v.secretaria || "—")}</td><td>${fmt(v.fecha_desde)}</td><td>${v.fecha_hasta ? fmt(v.fecha_hasta) : "sigue vacante"}</td>
-      <td><button class="btn chico" data-id="${v.id}">Editar</button></td></tr>`).join("") || `<tr><td colspan="6" class="ayuda">No hay puestos vacantes cargados.</td></tr>`}</tbody></table></div>`;
+      <td style="white-space:nowrap"><button class="btn chico" data-id="${v.id}">Editar</button>
+        ${v.registros ? "" : `<button class="btn chico peligro" data-borrar="${v.id}">Eliminar</button>`}</td></tr>`).join("") || `<tr><td colspan="6" class="ayuda">No hay puestos vacantes cargados.</td></tr>`}</tbody></table></div>
+    <p class="ayuda">«Eliminar» aparece solo en puestos que nunca tuvieron a alguien a cargo (por ejemplo, cargados por error).
+      Si ya tuvo, complete «Vacante hasta» para cerrarlo.</p>`;
+  $$("[data-borrar]", el).forEach((b) => (b.onclick = () => {
+    const v = vs.find((x) => x.id === +b.dataset.borrar);
+    eliminarRegistro(`/api/vacantes/${v.id}`, "Eliminar puesto vacante",
+      `el puesto vacante de <b>${esc(v.cargo)}${v.secretaria ? " (Sria. " + esc(v.secretaria) + ")" : ""}</b> en ${esc(conTurno(v.despacho, v.turno))}`,
+      async () => { await recargar(); administrar("vacantes"); });
+  }));
   $("#a-nuevo", el).onclick = () => formVacante({}, () => administrar("vacantes"));
   $$("[data-id]", el).forEach((b) => (b.onclick = () => formVacante(vs.find((v) => v.id === +b.dataset.id), () => administrar("vacantes"))));
 }
@@ -1039,7 +1155,15 @@ async function admUsuarios(el) {
   });
   el.innerHTML = `<button class="btn primario" id="a-nuevo" style="margin-bottom:8px">+ Usuario</button>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Alta</th><th></th></tr></thead>
-    <tbody>${us.map((u) => `<tr class="${u.activo ? "" : "inactivo"}"><td>${esc(u.usuario)}</td><td>${esc(u.nombre)}</td><td>${u.rol}</td><td>${fmtHora(u.creado_en)}</td><td><button class="btn chico" data-id="${u.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>`;
+    <tbody>${us.map((u) => `<tr class="${u.activo ? "" : "inactivo"}"><td>${esc(u.usuario)}</td><td>${esc(u.nombre)}</td><td>${u.rol}</td><td>${fmtHora(u.creado_en)}</td><td style="white-space:nowrap"><button class="btn chico" data-id="${u.id}">Editar</button>
+      ${u.registros || u.id === E.yo.id ? "" : `<button class="btn chico peligro" data-borrar="${u.id}">Eliminar</button>`}</td></tr>`).join("")}</tbody></table></div>
+    <p class="ayuda">«Eliminar» aparece solo en usuarios que nunca cargaron ni modificaron datos (por ejemplo, creados por error).
+      Para quien ya trabajó en el sistema, use «Editar» y desmarque «Puede ingresar»: así se conserva la auditoría.</p>`;
+  $$("[data-borrar]", el).forEach((b) => (b.onclick = () => {
+    const u = us.find((x) => x.id === +b.dataset.borrar);
+    eliminarRegistro(`/api/usuarios/${u.id}`, "Eliminar usuario", `el usuario <b>${esc(u.usuario)}</b> (${esc(u.nombre)})`,
+      async () => administrar("usuarios"));
+  }));
   $("#a-nuevo", el).onclick = () => editar({ rol: "OPERADOR", activo: true });
   $$("[data-id]", el).forEach((b) => (b.onclick = () => editar(us.find((u) => u.id === +b.dataset.id))));
 }
@@ -1050,13 +1174,17 @@ async function admInhabiles(el) {
     <form class="fila-campos" id="a-form" style="margin-bottom:10px"><input type="date" id="a-fecha" required>
       <input type="text" id="a-desc" placeholder="Descripción" required> <button class="btn primario">Agregar</button></form>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Fecha</th><th>Descripción</th><th></th></tr></thead>
-    <tbody>${xs.map((x) => `<tr><td>${fmt(x.fecha)} (${DIAS[aFecha(x.fecha).getUTCDay()]})</td><td>${esc(x.descripcion)}</td><td><button class="btn chico peligro" data-f="${x.fecha}">Quitar</button></td></tr>`).join("")}</tbody></table></div>`;
+    <tbody>${xs.map((x) => `<tr><td>${fmt(x.fecha)} (${DIAS[aFecha(x.fecha).getUTCDay()]})</td><td>${esc(x.descripcion)}</td><td><button class="btn chico peligro" data-f="${x.fecha}">Eliminar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#a-form", el).onsubmit = async (e) => {
     e.preventDefault();
     try { await api("POST", "/api/dias-inhabiles", { fecha: $("#a-fecha", el).value, descripcion: $("#a-desc", el).value }); await recargar(); administrar("inhabiles"); }
     catch (er) { mostrarError(er); }
   };
-  $$("[data-f]", el).forEach((b) => (b.onclick = async () => { await api("DELETE", `/api/dias-inhabiles/${b.dataset.f}`); await recargar(); administrar("inhabiles"); }));
+  $$("[data-f]", el).forEach((b) => (b.onclick = () => {
+    const x = xs.find((y) => y.fecha === b.dataset.f);
+    eliminarRegistro(`/api/dias-inhabiles/${x.fecha}`, "Eliminar día inhábil", `el día inhábil <b>${fmt(x.fecha)}</b> (${esc(x.descripcion)})`,
+      async () => { await recargar(); administrar("inhabiles"); });
+  }));
 }
 
 async function admAuditoria(el) {

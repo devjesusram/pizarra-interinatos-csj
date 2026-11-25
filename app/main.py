@@ -214,7 +214,8 @@ def catalogos(u=Depends(usuario_actual)):
         return {
             "cargos": todos(conn, "SELECT * FROM cargos ORDER BY orden_pizarra"),
             "tipos_licencia": booleanos(todos(conn, "SELECT * FROM tipos_licencia WHERE activo = 1 ORDER BY nombre"), "activo"),
-            "despachos": booleanos(todos(conn, "SELECT * FROM despachos ORDER BY localidad, nombre, turno"), "activo"),
+            "despachos": booleanos(todos(conn, f"SELECT d.*, ({SQL_REGISTROS_DESPACHO}) AS registros "
+                                               "FROM despachos d ORDER BY localidad, nombre, turno"), "activo"),
         }
 
 
@@ -223,6 +224,57 @@ SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id,
                          d.fuero, d.localidad, d.turno
                   FROM personal p JOIN cargos c ON c.codigo = p.cargo_codigo
                   JOIN despachos d ON d.id = p.despacho_id"""
+
+
+SQL_REGISTROS_DESPACHO = """(SELECT count(*) FROM personal p WHERE p.despacho_id = d.id)
+                            + (SELECT count(*) FROM vacantes v WHERE v.despacho_id = d.id)"""
+# Todo cambio de un usuario queda en la auditoría; además se cuentan las firmas en los registros.
+SQL_REGISTROS_USUARIO = """(SELECT count(*) FROM auditoria a WHERE a.usuario_id = u.id)
+    + (SELECT count(*) FROM licencias l WHERE u.id IN (l.creado_por, l.modificado_por))
+    + (SELECT count(*) FROM interinatos i WHERE u.id IN (i.creado_por, i.modificado_por))
+    + (SELECT count(*) FROM vacantes v WHERE v.creado_por = u.id)"""
+
+
+def _eliminar(conn, tabla: str, rid: int, sql_registros: str, alias: str, que: str, alternativa: str, uid: int):
+    """Borra un registro SOLO si no tiene nada asociado. Queda en la auditoría con sus datos."""
+    with escritura(conn):
+        fila = uno(conn, f"SELECT {alias}.*, ({sql_registros}) AS registros FROM {tabla} {alias} WHERE {alias}.id = ?", (rid,))
+        if not fila:
+            raise HTTPException(404, f"{que} inexistente")
+        if fila["registros"]:
+            raise HTTPException(409, f"No se puede eliminar: tiene {fila['registros']} registro(s) asociado(s). {alternativa}")
+        try:
+            conn.execute(f"DELETE FROM {tabla} WHERE id = ?", (rid,))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, f"No se puede eliminar: tiene registros asociados. {alternativa}")
+        fila.pop("registros")
+        fila.pop("hash_clave", None)
+        servicios.auditar(conn, tabla, rid, "ELIMINAR", fila, uid)
+    return {"ok": True}
+
+
+@app.delete("/api/despachos/{did}")
+def eliminar_despacho(did: int, u=Depends(requiere_admin)):
+    with db.conexion() as conn:
+        return _eliminar(conn, "despachos", did, SQL_REGISTROS_DESPACHO, "d", "Despacho",
+                         "Tiene funcionarios o puestos vacantes: muévalos a otro despacho o desactívelo.", u["id"])
+
+
+@app.delete("/api/vacantes/{vid}")
+def eliminar_vacante(vid: int, u=Depends(requiere_admin)):
+    with db.conexion() as conn:
+        return _eliminar(conn, "vacantes", vid, "SELECT count(*) FROM interinatos i WHERE i.vacante_id = v.id",
+                         "v", "Puesto vacante",
+                         "Ya tuvo personas a cargo: complete «Vacante hasta» para cerrarlo.", u["id"])
+
+
+@app.delete("/api/usuarios/{uid}")
+def eliminar_usuario(uid: int, u=Depends(requiere_admin)):
+    if uid == u["id"]:
+        raise HTTPException(400, "No puede eliminar su propio usuario.")
+    with db.conexion() as conn:
+        return _eliminar(conn, "usuarios", uid, SQL_REGISTROS_USUARIO, "u", "Usuario",
+                         "Ya cargó o modificó datos: desmarque «Puede ingresar» para quitarle el acceso.", u["id"])
 
 
 SQL_REGISTROS_PERSONA = """(SELECT count(*) FROM licencias l WHERE l.personal_id = p.id)
@@ -331,7 +383,8 @@ def editar_cargo(codigo: str, body: CargoIn, u=Depends(requiere_admin)):
     return {"ok": True}
 
 
-SQL_VACANTES = """SELECT v.*, c.nombre AS cargo, c.orden_pizarra, d.nombre AS despacho, d.fuero,
+SQL_VACANTES = """SELECT v.*, (SELECT count(*) FROM interinatos i WHERE i.vacante_id = v.id) AS registros,
+                         c.nombre AS cargo, c.orden_pizarra, d.nombre AS despacho, d.fuero,
                          d.localidad, d.turno
                   FROM vacantes v JOIN cargos c ON c.codigo = v.cargo_codigo
                   JOIN despachos d ON d.id = v.despacho_id"""
@@ -401,8 +454,8 @@ def borrar_inhabil(fecha: date, u=Depends(requiere_admin)):
 @app.get("/api/usuarios")
 def listar_usuarios(u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return booleanos(todos(conn, "SELECT id, usuario, nombre, rol, activo, creado_en FROM usuarios "
-                                     "ORDER BY nombre"), "activo")
+        return booleanos(todos(conn, f"SELECT u.id, u.usuario, u.nombre, u.rol, u.activo, u.creado_en, "
+                                     f"({SQL_REGISTROS_USUARIO}) AS registros FROM usuarios u ORDER BY nombre"), "activo")
 
 
 @app.post("/api/usuarios", status_code=201)

@@ -252,7 +252,7 @@
       <table>
         <tr><th>Pestaña</th><th>Para qué sirve</th></tr>
         <tr><td>Personal</td><td>Alta y edición de funcionarios: nombre (Apellido, Nombre), cargo, despacho, <b>Secretaría</b> (Nº 1, Nº 2…), correo y estado activo</td></tr>
-        <tr><td>Despachos</td><td>Juzgados con fuero, <b>turno</b> y localidad. Cada turno es un despacho: el juez y sus secretarias se cargan en el mismo</td></tr>
+        <tr><td>Despachos</td><td>Juzgados con fuero, <b>turno</b> y localidad. Cada turno es un despacho: el juez y sus secretarias se cargan en el mismo. El botón <b>Equipo</b> muestra y asigna a todo el personal del despacho</td></tr>
         <tr><td>Vacantes</td><td>Puestos sin titular: despacho, cargo, Secretaría, desde y hasta (vacío mientras siga vacante)</td></tr>
         <tr><td>Cargos</td><td>Cuántos despachos puede cubrir a la vez una persona de cada cargo. Hoy: jueces, actuarios y secretarios sin límite; ujieres, uno</td></tr>
         <tr><td>Usuarios</td><td>Cuentas de los compañeros: <b>Operador</b> (carga) o <b>Administrador</b> (además administra). Desmarcar “Puede ingresar” les quita el acceso al instante</td></tr>
@@ -262,8 +262,29 @@
       <figure><img src="/static/manual/14-admin-personal.png" alt="Pestaña Personal" loading="lazy"><figcaption>Personal: el duplicado (sin registros) muestra «Eliminar»; el original, solo «Editar».</figcaption></figure>
       <figure><img src="/static/manual/15-admin-vacantes.png" alt="Pestaña Vacantes" loading="lazy"><figcaption>Vacantes: puestos sin titular y desde cuándo.</figcaption></figure>
       <figure><img src="/static/manual/16-admin-cargos.png" alt="Pestaña Cargos" loading="lazy"><figcaption>Cargos: cuántos despachos puede cubrir a la vez cada cargo.</figcaption></figure>
+      <h3>Equipo de un despacho: asignar secretarias a un juez</h3>
+      <p>El juez y sus secretarias quedan vinculados por el <b>despacho</b>: todos los del mismo despacho forman su equipo. Para asignar dos secretarias a un juez:</p>
+      <ol>
+        <li>En <b>Administración → Despachos</b>, pulse <b>Equipo</b> en el despacho del juez.</li>
+        <li>En <b>Agregar al equipo</b>, elija a la secretaria (la lista muestra en qué despacho está hoy), elija su <b>Secretaría</b> (Nº 1, Nº 2…) y pulse <b>Agregar</b>. Repita con la segunda.</li>
+        <li>Si la secretaria todavía no está cargada, use <b>+ Nuevo funcionario</b>: queda creada directamente en ese despacho.</li>
+        <li>Para cambiar la Secretaría de alguien del equipo, elíjala en su fila; se guarda sola.</li>
+      </ol>
+      <figure><img src="/static/manual/18-admin-despachos.png" alt="Pestaña Despachos con los botones Equipo, Editar y Eliminar" loading="lazy"><figcaption>Despachos: «Equipo» en cada despacho; «Eliminar» solo en el que no tiene funcionarios ni vacantes.</figcaption></figure>
+      <figure><img src="/static/manual/19-equipo.png" alt="Ventana Equipo del despacho" loading="lazy"><figcaption>Equipo del despacho: el juez, la actuaria, dos secretarias (Sria. Nº 1 y Nº 2), el ujier y los puestos vacantes.</figcaption></figure>
+      <p>En la pizarra, con <b>Vista: Por despacho</b> y <b>Solo con novedades</b> desmarcado, el equipo aparece junto, con el juez en el encabezado.</p>
+      <h3>Dar de baja o eliminar</h3>
       <p><b>Dar de baja a un funcionario</b> (jubilación, traslado): en <b>Personal → Editar</b>, desmarque <b>Activo</b>. Deja de aparecer en la pizarra y en las listas, pero su historial se conserva. Antes, revise sus interinatos y licencias futuras, y si su puesto queda sin titular, cárguelo en <b>Vacantes</b>.</p>
-      <p><b>Eliminar un funcionario cargado por error</b> (por ejemplo, un duplicado): en <b>Personal</b>, el botón rojo <b>Eliminar</b> aparece solo si no tiene licencias ni interinatos. Pide confirmación y queda registrado en la auditoría. Si tiene registros, páselos al funcionario correcto con <b>Editar</b> o desactívelo.</p>
+      <p><b>Eliminar algo cargado por error</b>: el botón rojo <b>Eliminar</b> aparece solo cuando no hay registros asociados, para no perder historial. Pide confirmación y queda en la auditoría.</p>
+      <table>
+        <tr><th>Pestaña</th><th>Se puede eliminar si…</th><th>Si no se puede</th></tr>
+        <tr><td>Personal</td><td>No tiene licencias ni interinatos</td><td>Páselos al funcionario correcto con Editar, o desmarque Activo</td></tr>
+        <tr><td>Despachos</td><td>No tiene funcionarios ni puestos vacantes</td><td>Mueva a su personal con Equipo, o desmarque Activo</td></tr>
+        <tr><td>Vacantes</td><td>Nunca tuvo a alguien a cargo</td><td>Complete «Vacante hasta» para cerrarlo</td></tr>
+        <tr><td>Usuarios</td><td>Nunca cargó ni modificó datos (y no es usted)</td><td>Desmarque «Puede ingresar»</td></tr>
+        <tr><td>Días inhábiles</td><td>Siempre</td><td>—</td></tr>
+        <tr><td>Cargos</td><td>No se eliminan: son la estructura del sistema (Juez, Actuario/a, Secretario/a, Ujier)</td><td>—</td></tr>
+      </table>
     </section>
 
     <section class="hoja" id="preguntas">

@@ -212,7 +212,71 @@ def test_manual_sin_internet_ni_sesion(cliente):
     assert r.status_code == 200 and "Manual de usuario" in r.text
     import re
     imagenes = re.findall(r'src="(/static/manual/[^"]+)"', r.text)
-    assert len(imagenes) == 17
+    assert len(imagenes) == 19
     for src in imagenes:                                  # todas las capturas están incluidas
         assert cliente.get(src).status_code == 200
     assert "http" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', r.text)).replace("http://172.31.60.254:8090", "")
+
+
+def test_eliminar_despacho_solo_si_vacio(cliente, datos, conn):
+    entrar(cliente)
+    nuevo = cliente.post("/api/despachos", json={"nombre": "Juzgado cargado por error", "fuero": "Civil",
+                                                 "localidad": "Caacupé"}).json()["id"]
+    desp = {d["id"]: d for d in cliente.get("/api/catalogos").json()["despachos"]}
+    assert desp[nuevo]["registros"] == 0
+    con_gente = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["juez1"],)).fetchone()["despacho_id"]
+    assert desp[con_gente]["registros"] == 4
+    r = cliente.delete(f"/api/despachos/{con_gente}")
+    assert r.status_code == 409 and "muévalos" in r.json()["detail"]
+    entrar(cliente, "oper")
+    assert cliente.delete(f"/api/despachos/{nuevo}").status_code == 403
+    entrar(cliente)
+    assert cliente.delete(f"/api/despachos/{nuevo}").status_code == 200
+    assert nuevo not in {d["id"] for d in cliente.get("/api/catalogos").json()["despachos"]}
+
+
+def test_eliminar_vacante_solo_si_nunca_tuvo_a_cargo(cliente, datos, conn):
+    entrar(cliente)
+    despacho = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["actuario1"],)).fetchone()["despacho_id"]
+    v1 = cliente.post("/api/vacantes", json={"despacho_id": despacho, "cargo_codigo": "ACTUARIO", "secretaria": "Nº 2",
+                                             "fecha_desde": "2026-11-16"}).json()["id"]
+    v2 = cliente.post("/api/vacantes", json={"despacho_id": despacho, "cargo_codigo": "UJIER",
+                                             "fecha_desde": "2026-11-16"}).json()["id"]
+    cliente.post("/api/interinatos", json={"vacante_id": v1, "interino_id": datos["actuario1"],
+                                           "fecha_inicio": "2026-11-16", "fecha_fin": "2026-11-20"})
+    regs = {v["id"]: v["registros"] for v in cliente.get("/api/vacantes").json()}
+    assert regs == {v1: 1, v2: 0}
+    r = cliente.delete(f"/api/vacantes/{v1}")
+    assert r.status_code == 409 and "Vacante hasta" in r.json()["detail"]
+    assert cliente.delete(f"/api/vacantes/{v2}").status_code == 200
+
+
+def test_eliminar_usuario_solo_si_no_trabajo(cliente, datos):
+    entrar(cliente)
+    nuevo = cliente.post("/api/usuarios", json={"usuario": "error", "nombre": "Usuario por error",
+                                                "rol": "OPERADOR", "clave": "12345678"}).json()["id"]
+    us = {u["usuario"]: u for u in cliente.get("/api/usuarios").json()}
+    assert us["error"]["registros"] == 0 and us["admin"]["registros"] > 0     # admin creó al nuevo (auditoría)
+    assert cliente.delete(f"/api/usuarios/{us['admin']['id']}").status_code == 400   # no a sí mismo
+    entrar(cliente, "oper")
+    cliente.post("/api/licencias", json={"personal_id": datos["juez1"], "tipo_licencia_id": 1,
+                                         "fecha_inicio": "2026-11-16", "fecha_fin": "2026-11-17", "organo_aprobador": "CONSEJO"})
+    entrar(cliente)
+    oper = {u["usuario"]: u for u in cliente.get("/api/usuarios").json()}["oper"]
+    r = cliente.delete(f"/api/usuarios/{oper['id']}")
+    assert r.status_code == 409 and "Puede ingresar" in r.json()["detail"]   # ya trabajó: se desactiva
+    assert cliente.delete(f"/api/usuarios/{nuevo}").status_code == 200
+    assert "error" not in {u["usuario"] for u in cliente.get("/api/usuarios").json()}
+
+
+def test_mover_funcionario_al_equipo_de_otro_despacho(cliente, datos, conn):
+    """Lo que hace el botón Equipo: pasar a una secretaria al despacho del juez, con su Secretaría."""
+    entrar(cliente)
+    despacho_juez = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["juez1"],)).fetchone()["despacho_id"]
+    for quien, sria in (("secretario2", "Nº 1"), ("secretario3", "Nº 2")):
+        p = [x for x in cliente.get("/api/personal").json() if x["id"] == datos[quien]][0]
+        r = cliente.put(f"/api/personal/{p['id']}", json={"nombre_completo": p["nombre_completo"], "cargo_codigo": p["cargo_codigo"],
+                                                          "despacho_id": despacho_juez, "secretaria": sria, "activo": True})
+        assert r.status_code == 200
+    equipo = [x for x in cliente.get("/api/personal").json() if x["despacho_id"] == despacho_juez and x["cargo_codigo"] == "SECRETARIO"]
+    assert sorted(x["secretaria"] or "" for x in equipo) == ["", "Nº 1", "Nº 2"]   # la original + las dos nuevas
