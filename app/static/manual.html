@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manual de usuario · Pizarra de Interinatos</title>
+  <link rel="stylesheet" href="/static/estilos.css">
+  <style>
+    body { display: block; background: var(--fondo); }
+    .manual { max-width: 980px; margin: 0 auto; padding: 0 16px 60px; }
+    .manual-cab { background: var(--primario); color: #fff; padding: 14px 16px; position: sticky; top: 0; z-index: 5; }
+    .manual-cab .dentro { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .manual-cab h1 { font-size: 17px; margin: 0; }
+    .manual-cab a { color: #fff; margin-left: auto; border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 4px 10px; text-decoration: none; }
+    .manual-cab button { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.4); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+    .hoja { background: var(--panel); border-radius: 10px; padding: 24px 28px; margin-top: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .hoja h2 { font-size: 21px; margin: 0 0 12px; color: var(--primario); scroll-margin-top: 70px; }
+    .hoja h3 { font-size: 15px; margin: 18px 0 6px; }
+    .hoja p, .hoja li { line-height: 1.55; }
+    .hoja ol, .hoja ul { padding-left: 22px; }
+    .hoja li { margin: 4px 0; }
+    .hoja table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    .hoja th, .hoja td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+    .hoja th { background: var(--fondo); }
+    figure { margin: 14px 0 20px; }
+    figure img { max-width: 100%; height: auto; border: 1px solid var(--borde); border-radius: 8px; display: block; cursor: zoom-in; }
+    figcaption { font-size: 13px; color: var(--texto-suave); margin-top: 6px; font-style: italic; }
+    .indice { columns: 2; column-gap: 32px; padding-left: 20px; }
+    .indice li { break-inside: avoid; }
+    .nota { background: var(--interino-fondo); border-left: 4px solid var(--interino); padding: 10px 14px; border-radius: 6px; }
+    .zoom { position: fixed; inset: 0; background: rgba(15, 27, 45, .85); display: flex; align-items: center; justify-content: center; z-index: 50; cursor: zoom-out; padding: 16px; }
+    .zoom img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+    @media (max-width: 700px) { .hoja { padding: 16px; } .indice { columns: 1; } }
+    @media print {
+      .manual-cab { position: static; } .manual-cab a, .manual-cab button { display: none; }
+      .hoja { box-shadow: none; padding: 0; } section.hoja { break-before: page; }
+      figure img { cursor: default; }
+    }
+  </style>
+</head>
+<body>
+  <header class="manual-cab"><div class="dentro">
+    <h1>⚖ Manual de usuario · Pizarra de Interinatos</h1>
+    <button onclick="window.print()">🖨 Imprimir</button>
+    <a href="/">← Volver a la Pizarra</a>
+  </div></header>
+
+  <main class="manual">
+    <div class="hoja">
+      <p>La Pizarra reemplaza la pizarra física: registra las licencias, muestra quién cubre a quién y avisa antes de que se cargue un error.
+        Se usa desde el navegador en <b>http://172.31.60.254:8090</b>. El sistema no decide reemplazos: usted los carga y el sistema verifica que sean posibles.</p>
+      <p class="ayuda">Las capturas usan datos de ejemplo con nombres ficticios.</p>
+      <ol class="indice">
+        <li><a href="#ingresar">Ingresar y conocer la pantalla</a></li>
+        <li><a href="#leer">Leer la pizarra</a></li>
+        <li><a href="#licencia">Registrar una licencia</a></li>
+        <li><a href="#interino">Asignar un interino</a></li>
+        <li><a href="#vacantes">Puestos vacantes</a></li>
+        <li><a href="#avisos">Avisos y bloqueos</a></li>
+        <li><a href="#alertas">Alertas</a></li>
+        <li><a href="#editar">Editar o anular</a></li>
+        <li><a href="#calendario">Calendario (.ics) y Modo TV</a></li>
+        <li><a href="#admin">Administración</a></li>
+        <li><a href="#preguntas">Preguntas frecuentes</a></li>
+      </ol>
+    </div>
+
+    <section class="hoja" id="ingresar">
+      <h2>1. Ingresar y conocer la pantalla</h2>
+      <p>Cada persona entra con su propio usuario; así la auditoría registra quién hizo cada cambio.</p>
+      <ol>
+        <li>Abra Chrome, Edge o Firefox y escriba <b>http://172.31.60.254:8090</b>.</li>
+        <li>Ingrese su <b>usuario</b> y <b>contraseña</b> (se los da un administrador).</li>
+        <li>La primera vez, cambie la contraseña: menú <b>👤 (su nombre) → Cambiar contraseña</b>. No use la misma de su correo o de Windows.</li>
+        <li>Para salir: <b>👤 → Salir</b>. La sesión se cierra sola después de 12 horas.</li>
+      </ol>
+      <figure><img src="/static/manual/01-ingreso.png" alt="Pantalla de ingreso con usuario y contraseña" loading="lazy"><figcaption>Pantalla de ingreso.</figcaption></figure>
+      <figure><img src="/static/manual/13-menu-usuario.png" alt="Menú del usuario" loading="lazy" style="max-width:340px"><figcaption>Menú 👤: administración (solo administradores), cambiar contraseña, este manual, salir y versión instalada.</figcaption></figure>
+      <p>La pantalla tiene cinco partes, de arriba hacia abajo:</p>
+      <table>
+        <tr><th>Parte</th><th>Qué contiene</th></tr>
+        <tr><td>Barra azul</td><td>Fechas visibles, botones ◀ ▶ y <b>Hoy</b>, cantidad de semanas, <b>Modo TV</b> y el menú <b>👤</b> (versión instalada, manual, administración, contraseña, salir)</td></tr>
+        <tr><td>Herramientas</td><td><b>+ Licencia</b>, <b>+ Interinato</b>, vista, filtros (cargo, fuero, localidad, turno), <b>Solo con novedades</b>, buscador y <b>Exportar .ics</b></td></tr>
+        <tr><td>Alertas (franja amarilla)</td><td>Ausentes sin interino, puestos vacantes sin nadie a cargo e interinatos en conflicto, cada uno con su botón para resolverlo</td></tr>
+        <tr><td>Pizarra</td><td>Una fila por funcionario y una columna por día</td></tr>
+        <tr><td>Leyenda</td><td>Qué significa cada color</td></tr>
+      </table>
+      <figure><img src="/static/manual/02-pantalla-principal.png" alt="Pantalla principal" loading="lazy"><figcaption>Pantalla principal en vista por cargo, con las alertas desplegadas.</figcaption></figure>
+    </section>
+
+    <section class="hoja" id="leer">
+      <h2>2. Leer la pizarra</h2>
+      <p>Cada fila es un funcionario (o un puesto vacante) y cada barra de color es una novedad en esos días. Al hacer clic en una barra se abre su detalle.</p>
+      <table>
+        <tr><th>Color</th><th>Significa</th><th>Al hacer clic</th></tr>
+        <tr><td>Rojo rayado</td><td>Licencia (📎 si tiene adjunto)</td><td>Detalle, editar, anular, asignar interino</td></tr>
+        <tr><td>Verde: “✔ cubre: …” / “✔ a cargo: …”</td><td>Quién reemplaza a la persona ausente o al puesto vacante</td><td>Detalle del interinato</td></tr>
+        <tr><td>Azul: “INTERINO de …”</td><td>Esta persona está cubriendo a otra o un puesto vacante</td><td>Detalle del interinato</td></tr>
+        <tr><td>Ámbar punteado: “⚠ SIN CUBRIR”</td><td>Ausente sin interino en días hábiles</td><td>Asignar un interino con fechas cargadas</td></tr>
+        <tr><td>Gris rayado: “PUESTO VACANTE”</td><td>Puesto sin titular (por ejemplo, una Secretaría)</td><td>Detalle y “Asignar a cargo”</td></tr>
+        <tr><td>Violeta: “⚡”</td><td>Interinato en conflicto: quien cubre recibió una licencia</td><td>Detalle para editar o anular</td></tr>
+        <tr><td>Columna gris</td><td>Fin de semana o día inhábil</td><td>—</td></tr>
+        <tr><td>Columna amarilla</td><td>Hoy</td><td>—</td></tr>
+      </table>
+      <p>Otros indicadores: la etiqueta azul <b>“cubre 2”</b> junto a un nombre indica cuántos despachos cubre esa persona a la vez, y <b>“Sria. Nº 1”</b> indica su Secretaría.</p>
+      <h3>Vistas y filtros</h3>
+      <ul>
+        <li><b>Vista “Por cargo”</b>: agrupa Jueces, Actuarios, Secretarios y Ujieres. Sirve para ver todas las coberturas entre pares.</li>
+        <li><b>Vista “Por despacho”</b>: agrupa por juzgado o turno. A la derecha del encabezado aparece el <b>juez responsable</b> y, si está ausente, quién está a cargo ese día.</li>
+        <li><b>Solo con novedades</b> (marcado por defecto): oculta a quienes no tienen licencias ni interinatos en las fechas visibles. Desmárquelo para ver a todo el personal.</li>
+        <li><b>Cargo, Fuero, Localidad, Turno</b> y el <b>buscador</b> (nombre o despacho) reducen lo que se ve.</li>
+        <li>Clic en el encabezado de un grupo lo pliega o despliega.</li>
+      </ul>
+      <p><b>Moverse en el tiempo:</b> ◀ y ▶ avanzan o retroceden una semana, <b>Hoy</b> vuelve a la semana actual, y el selector cambia entre 2, 4 o 6 semanas.</p>
+      <p><b>Atajos de teclado</b> (fuera de un formulario): <b>L</b> nueva licencia · <b>I</b> nuevo interinato · <b>T</b> ir a hoy · <b>← →</b> semana anterior o siguiente.</p>
+    </section>
+
+    <section class="hoja" id="licencia">
+      <h2>3. Registrar una licencia</h2>
+      <p>Las licencias llegan por correo: del Consejo de Administración para jueces y de RRHH para actuarios, secretarios y ujieres. Se cargan así:</p>
+      <ol>
+        <li>Haga clic en <b>+ Licencia</b> (o tecla <b>L</b>). Atajo: haga clic o arrastre sobre los días de la fila del funcionario y el formulario se abre con el nombre y las fechas cargados.</li>
+        <li>Elija el <b>Funcionario</b> y el <b>Tipo de licencia</b>. “Aprobada por” se completa sola según el cargo; cámbiela si corresponde.</li>
+        <li>Cargue <b>Desde</b> y <b>Hasta</b>. Debajo se ven los días corridos y hábiles.</li>
+        <li>Escriba el <b>Nº de resolución</b>.</li>
+        <li>En <b>Respaldo</b>, arrastre el PDF o el correo guardado (.eml), o haga clic para elegirlo (máximo 15 MB). Con un .eml, el remitente, la fecha y el asunto se completan solos; revíselos.</li>
+        <li>Lea el recuadro <b>Impacto en la pizarra</b>: avisa si la persona queda sin interino o si estaba cubriendo a alguien.</li>
+        <li>Pulse <b>Guardar</b>, o <b>Guardar y asignar interino ▸</b> para pasar directo al paso siguiente con las fechas ya cargadas.</li>
+      </ol>
+      <figure><img src="/static/manual/04-nueva-licencia.png" alt="Formulario Nueva licencia" loading="lazy"><figcaption>Formulario de nueva licencia. Abajo, el recuadro «Impacto en la pizarra».</figcaption></figure>
+      <p>Si la persona ya tiene otra licencia en esas fechas, el sistema no deja guardar y muestra cuál es. Si la persona estaba cubriendo a alguien, la licencia se guarda igual (es un hecho oficial) y ese interinato queda <b>en conflicto</b> para que lo reasigne (ver <a href="#alertas">sección 7</a>).</p>
+    </section>
+
+    <section class="hoja" id="interino">
+      <h2>4. Asignar un interino a una persona ausente</h2>
+      <p>La forma más rápida es hacer clic en la barra ámbar <b>“⚠ SIN CUBRIR”</b> o en el botón <b>Asignar interino</b> de las alertas: el formulario se abre con el titular y las fechas cargados.</p>
+      <ol>
+        <li>Haga clic en <b>+ Interinato</b> (o tecla <b>I</b>).</li>
+        <li>En <b>Cubre a</b>, deje marcado <b>Una persona ausente</b> y elija el <b>Titular</b> (quien está de licencia).</li>
+        <li>Cargue <b>Desde</b> y <b>Hasta</b>. “Motivo” muestra la licencia vinculada.</li>
+        <li>Elija al <b>Interino</b> en la lista. Solo aparecen funcionarios del <b>mismo cargo</b>, ordenados así: primero los disponibles; entre ellos, los del <b>mismo despacho o turno</b> (etiqueta verde “mismo despacho”) y después los de la misma localidad.</li>
+        <li>Escriba el <b>Nº de acto de designación</b> y, si hace falta, observaciones.</li>
+        <li>Pulse <b>Asignar</b>.</li>
+      </ol>
+      <figure><img src="/static/manual/05-asignar-interino.png" alt="Formulario Asignar interino" loading="lazy"><figcaption>Asignar interino: los candidatos del mismo despacho aparecen primero, con su estado a la derecha.</figcaption></figure>
+      <p>Cada candidato muestra su estado: <b>Disponible</b>, <b>Con aviso</b> (se puede elegir) o <b>No disponible</b> (aparece gris, con el motivo, y no se puede elegir).</p>
+      <h3>Reglas que aplica el sistema</h3>
+      <ul>
+        <li>Los interinatos son <b>solo entre pares</b>: Juez con Juez, Actuario con Actuario, Secretario con Secretario, Ujier con Ujier.</li>
+        <li><b>Jueces, actuarios y secretarios</b> pueden cubrir varios despachos a la vez; los <b>ujieres</b>, uno. Un administrador puede cambiar estos límites.</li>
+        <li>Nadie puede cubrir si está de licencia o si a su vez otra persona lo está cubriendo.</li>
+        <li>Un titular tiene un solo interino por día. Si cambia el interino a mitad de la licencia, cargue dos interinatos con fechas seguidas.</li>
+      </ul>
+    </section>
+
+    <section class="hoja" id="vacantes">
+      <h2>5. Puestos vacantes</h2>
+      <p>Un puesto vacante es un cargo sin titular, por ejemplo la Secretaría Nº 2 de un juzgado sin actuaria designada. Quien queda a cargo se asigna como un interinato, pero eligiendo el puesto en lugar de una persona.</p>
+      <p>Ejemplo: la actuaria de la Secretaría Nº 1 del Juzgado Penal de Garantías 1º Turno también está a cargo de la Secretaría Nº 2, que no tiene titular.</p>
+      <ol>
+        <li>Un administrador carga el puesto en <b>Administración → Vacantes</b> (ver <a href="#admin">sección 10</a>). En la pizarra aparece una fila <b>“⚪ Puesto vacante”</b>.</li>
+        <li>Haga clic en <b>+ Interinato</b>, o en la barra ámbar <b>“⚠ SIN NADIE A CARGO”</b> de esa fila.</li>
+        <li>En <b>Cubre a</b>, marque <b>Un puesto vacante</b> y elija el puesto (cargo, Secretaría y despacho).</li>
+        <li>Cargue las fechas, elija a la persona a cargo y pulse <b>Asignar</b>.</li>
+      </ol>
+      <figure><img src="/static/manual/10-asignar-vacante.png" alt="Asignar a cargo de un puesto vacante" loading="lazy"><figcaption>Asignar a cargo de un puesto vacante: «Cubre a: Un puesto vacante».</figcaption></figure>
+      <p>En la vista <b>Por despacho</b> se ve así: la fila de la actuaria muestra en azul “A CARGO de puesto vacante (Sria. Nº 2)”, y la fila del puesto vacante muestra en verde “✔ a cargo: …”.</p>
+      <figure><img src="/static/manual/09-vista-despacho-vacante.png" alt="Vista por despacho con puestos vacantes" loading="lazy"><figcaption>Vista por despacho: a la derecha del encabezado, el juez responsable. Debajo, la Secretaría Nº 2 vacante a cargo de la actuaria de la Nº 1, y un puesto de ujier vacante sin nadie a cargo.</figcaption></figure>
+      <p>Un puesto vacante tiene una sola persona a cargo por día, y siempre del mismo cargo. Cuando se designa a un titular, un administrador completa “Vacante hasta” y carga a la nueva persona en Personal.</p>
+    </section>
+
+    <section class="hoja" id="avisos">
+      <h2>6. Avisos y bloqueos</h2>
+      <p>Antes de guardar, el sistema revisa que no haya cruces. Hay tres tipos de mensaje:</p>
+      <ul>
+        <li><b>⛔ Bloqueo</b>: no se guarda. Hay que cambiar a la persona o las fechas.</li>
+        <li><b>⚠ Advertencia</b>: se guarda solo si usted pulsa <b>Confirmar y guardar</b>. Su confirmación queda en la auditoría con su usuario.</li>
+        <li><b>ℹ️ Información</b>: se guarda sin preguntar; solo le avisa algo.</li>
+      </ul>
+      <figure><img src="/static/manual/06-advertencia.png" alt="Ventana de advertencia" loading="lazy" style="max-width:620px"><figcaption>Advertencia: se guarda solo si pulsa «Confirmar y guardar».</figcaption></figure>
+      <figure><img src="/static/manual/07-bloqueo.png" alt="Ventana de bloqueo" loading="lazy" style="max-width:620px"><figcaption>Bloqueo: no se guarda; el mensaje dice por qué.</figcaption></figure>
+      <table>
+        <tr><th>Mensaje</th><th>Tipo</th><th>Qué hacer</th></tr>
+        <tr><td>“… está de licencia del … al …”</td><td>⛔</td><td>Elija otro interino o ajuste las fechas</td></tr>
+        <tr><td>“… ya es interino de …”</td><td>⛔</td><td>Esa persona ya cubre el máximo que permite su cargo (ujieres: uno). Elija a otra</td></tr>
+        <tr><td>“… ya está cubierto por …” / “ya está a cargo de …”</td><td>⛔</td><td>Ya hay alguien asignado en esas fechas. Edite ese interinato si hay que cambiarlo</td></tr>
+        <tr><td>“… figura ausente (lo cubre …)”</td><td>⛔</td><td>La persona elegida también está ausente. Elija a otra</td></tr>
+        <tr><td>“Los interinatos son solo entre pares”</td><td>⛔</td><td>Elija a alguien del mismo cargo</td></tr>
+        <tr><td>“… ya tiene una licencia del … al …”</td><td>⛔</td><td>La licencia se superpone con otra ya cargada. Revise las fechas o edite la anterior</td></tr>
+        <tr><td>“… está dado de baja”</td><td>⛔</td><td>El funcionario fue desactivado. Consulte a un administrador</td></tr>
+        <tr><td>“Este registro fue modificado por … Recargue”</td><td>⛔</td><td>Otro compañero lo cambió mientras usted editaba. Recargue la página y vuelva a intentar</td></tr>
+        <tr><td>“… no tiene licencia registrada en N día(s)”</td><td>⚠</td><td>Normal si la ausencia es por traslado o comisión sin licencia cargada. Confirme o cargue primero la licencia</td></tr>
+        <tr><td>“N día(s) quedan fuera de la vacancia”</td><td>⚠</td><td>Las fechas exceden el período del puesto vacante. Ajuste las fechas o confirme</td></tr>
+        <tr><td>“… cubrirá N despachos simultáneamente”</td><td>ℹ️</td><td>Solo informa cuántos despachos acumula esa persona</td></tr>
+      </table>
+    </section>
+
+    <section class="hoja" id="alertas">
+      <h2>7. Alertas</h2>
+      <p>La franja amarilla arriba de la pizarra lista lo que necesita atención en los próximos 60 días. Revísela al empezar el día; cada alerta tiene su botón para resolverla.</p>
+      <figure><img src="/static/manual/03-alertas.png" alt="Franja de alertas" loading="lazy"><figcaption>Franja de alertas: cada línea tiene su botón para resolverla.</figcaption></figure>
+      <table>
+        <tr><th>Alerta</th><th>Qué pasó</th><th>Cómo resolverla</th></tr>
+        <tr><td>Ausente sin interino</td><td>Alguien está de licencia y hay días hábiles sin nadie que lo cubra</td><td><b>Asignar interino</b> (<a href="#interino">sección 4</a>)</td></tr>
+        <tr><td>Puesto vacante sin nadie a cargo</td><td>Un puesto vacante tiene días hábiles sin nadie asignado</td><td><b>Asignar a cargo</b> (<a href="#vacantes">sección 5</a>)</td></tr>
+        <tr><td>⚡ Interinato en conflicto</td><td>Quien cubre recibió una licencia que se cruza con el interinato</td><td><b>Resolver</b> → <b>Editar</b> para cambiar de interino o de fechas, o <b>Anular</b> si ya no corresponde</td></tr>
+      </table>
+      <figure><img src="/static/manual/11-conflicto.png" alt="Detalle de un interinato en conflicto" loading="lazy" style="max-width:720px"><figcaption>Interinato en conflicto: use «Editar» para cambiar de interino o «Anular».</figcaption></figure>
+      <p>Los fines de semana y días inhábiles no generan alertas. Si una alerta sigue después de asignar, revise las fechas: puede quedar algún día sin cubrir (por ejemplo, en un puesto vacante sin fecha de fin). Al anular la licencia que causó un conflicto, el interinato vuelve solo a la normalidad.</p>
+    </section>
+
+    <section class="hoja" id="editar">
+      <h2>8. Editar o anular</h2>
+      <p>Nada se borra: los registros se <b>anulan</b> y quedan en la auditoría con el motivo.</p>
+      <ol>
+        <li>Haga clic en la barra de la licencia (roja) o del interinato (azul o verde).</li>
+        <li>En el detalle elija:
+          <ul>
+            <li><b>Editar</b>: cambia fechas, tipo, persona, adjunto u observaciones. El sistema vuelve a validar todo antes de guardar.</li>
+            <li><b>Anular</b>: pide el motivo (obligatorio), por ejemplo “Cargada por error” o “Licencia interrumpida”.</li>
+            <li><b>Asignar interino</b> (en licencias): abre el formulario con el titular y las fechas.</li>
+          </ul>
+        </li>
+      </ol>
+      <figure><img src="/static/manual/08-detalle-licencia.png" alt="Detalle de una licencia" loading="lazy" style="max-width:720px"><figcaption>Detalle de una licencia: quién la cubre, el respaldo y quién la cargó.</figcaption></figure>
+      <h3>Casos frecuentes</h3>
+      <ul>
+        <li><b>Prórroga de licencia</b>: edite la licencia y cambie la fecha <b>Hasta</b>; después extienda el interinato o asigne uno para los días nuevos.</li>
+        <li><b>Reemplazar el adjunto</b>: edite la licencia y suba el archivo nuevo; reemplaza al anterior.</li>
+        <li><b>Licencia interrumpida</b>: edite y adelante la fecha <b>Hasta</b>, o anule si no se tomó.</li>
+      </ul>
+      <p>El detalle muestra quién cargó o modificó cada registro y cuándo.</p>
+    </section>
+
+    <section class="hoja" id="calendario">
+      <h2>9. Calendario (.ics) y Modo TV</h2>
+      <p><b>Exportar a calendario:</b> las licencias e interinatos se pueden llevar a Google Calendar, Outlook o el calendario del teléfono.</p>
+      <ol>
+        <li>Haga clic en <b>⇩ Exportar .ics</b>.</li>
+        <li>Elija <b>Toda la circunscripción</b> o un funcionario, y las fechas.</li>
+        <li>Pulse <b>⇩ Descargar .ics</b> y abra o importe el archivo en el calendario.</li>
+      </ol>
+      <p>Al elegir un funcionario aparece además un <b>enlace de suscripción</b> que se actualiza solo. Funciona solo en equipos conectados a la red interna, y quien tenga el enlace ve las licencias e interinatos de esa persona: compártalo solo con ella.</p>
+      <figure><img src="/static/manual/12-exportar-ics.png" alt="Exportar a calendario" loading="lazy" style="max-width:720px"><figcaption>Exportar a calendario, con el enlace de suscripción de un funcionario.</figcaption></figure>
+      <p><b>Modo TV:</b> el botón <b>Modo TV</b> abre una pantalla completa de solo lectura con quienes están de licencia hoy, agrupados por cargo, y quién los cubre (o “⚠ SIN INTERINO”). Sirve para dejarla en un monitor de la oficina; se actualiza sola cada 5 minutos. Para salir, pulse <b>Esc</b> o <b>Salir</b>.</p>
+      <figure><img src="/static/manual/17-modo-tv.png" alt="Modo TV" loading="lazy"><figcaption>Modo TV, para un monitor en la oficina.</figcaption></figure>
+    </section>
+
+    <section class="hoja" id="admin">
+      <h2>10. Administración (solo administradores)</h2>
+      <p>Se abre en <b>👤 → ⚙ Administración</b>. Los operadores no ven este menú: cargan licencias e interinatos, pero no cambian personal, despachos, límites ni usuarios.</p>
+      <table>
+        <tr><th>Pestaña</th><th>Para qué sirve</th></tr>
+        <tr><td>Personal</td><td>Alta y edición de funcionarios: nombre (Apellido, Nombre), cargo, despacho, <b>Secretaría</b> (Nº 1, Nº 2…), correo y estado activo</td></tr>
+        <tr><td>Despachos</td><td>Juzgados con fuero, <b>turno</b> y localidad. Cada turno es un despacho: el juez y sus secretarias se cargan en el mismo</td></tr>
+        <tr><td>Vacantes</td><td>Puestos sin titular: despacho, cargo, Secretaría, desde y hasta (vacío mientras siga vacante)</td></tr>
+        <tr><td>Cargos</td><td>Cuántos despachos puede cubrir a la vez una persona de cada cargo. Hoy: jueces, actuarios y secretarios sin límite; ujieres, uno</td></tr>
+        <tr><td>Usuarios</td><td>Cuentas de los compañeros: <b>Operador</b> (carga) o <b>Administrador</b> (además administra). Desmarcar “Puede ingresar” les quita el acceso al instante</td></tr>
+        <tr><td>Días inhábiles</td><td>Feriados y feria judicial. Se sombrean en la pizarra y no generan alertas</td></tr>
+        <tr><td>Auditoría</td><td>Los últimos 300 cambios: quién, cuándo, qué, y las advertencias que confirmó</td></tr>
+      </table>
+      <figure><img src="/static/manual/14-admin-personal.png" alt="Pestaña Personal" loading="lazy"><figcaption>Personal: el duplicado (sin registros) muestra «Eliminar»; el original, solo «Editar».</figcaption></figure>
+      <figure><img src="/static/manual/15-admin-vacantes.png" alt="Pestaña Vacantes" loading="lazy"><figcaption>Vacantes: puestos sin titular y desde cuándo.</figcaption></figure>
+      <figure><img src="/static/manual/16-admin-cargos.png" alt="Pestaña Cargos" loading="lazy"><figcaption>Cargos: cuántos despachos puede cubrir a la vez cada cargo.</figcaption></figure>
+      <p><b>Dar de baja a un funcionario</b> (jubilación, traslado): en <b>Personal → Editar</b>, desmarque <b>Activo</b>. Deja de aparecer en la pizarra y en las listas, pero su historial se conserva. Antes, revise sus interinatos y licencias futuras, y si su puesto queda sin titular, cárguelo en <b>Vacantes</b>.</p>
+      <p><b>Eliminar un funcionario cargado por error</b> (por ejemplo, un duplicado): en <b>Personal</b>, el botón rojo <b>Eliminar</b> aparece solo si no tiene licencias ni interinatos. Pide confirmación y queda registrado en la auditoría. Si tiene registros, páselos al funcionario correcto con <b>Editar</b> o desactívelo.</p>
+    </section>
+
+    <section class="hoja" id="preguntas">
+      <h2>11. Preguntas frecuentes</h2>
+      <table>
+        <tr><th>Pregunta</th><th>Respuesta</th></tr>
+        <tr><td>Olvidé mi contraseña</td><td>Pídale a un administrador que le ponga una nueva (Administración → Usuarios → Editar) y cámbiela al entrar</td></tr>
+        <tr><td>No veo a un funcionario en la pizarra</td><td>Desmarque <b>Solo con novedades</b>, revise los filtros y el buscador. Si sigue sin aparecer, puede estar dado de baja</td></tr>
+        <tr><td>No aparece en la lista de interinos</td><td>Solo se listan personas del mismo cargo. Si aparece gris, el motivo está debajo de su nombre</td></tr>
+        <tr><td>La sesión expiró</td><td>Pasa después de 12 horas: vuelva a ingresar</td></tr>
+        <tr><td>La página no abre</td><td>Pruebe desde otra PC. Si en ninguna abre, avise al responsable del servidor</td></tr>
+        <tr><td>¿Qué versión tengo?</td><td>Menú <b>👤</b>, abajo de todo</td></tr>
+        <tr><td>¿Se pueden perder datos?</td><td>Se hace un respaldo automático todas las noches y antes de cada actualización. Los registros no se borran: se anulan</td></tr>
+        <tr><td>¿Quién cambió algo?</td><td>El detalle de cada registro muestra quién lo cargó y lo modificó; la auditoría completa está en Administración</td></tr>
+      </table>
+      <p class="nota">Este manual está incluido en el sistema: se abre desde el menú <b>👤 → 📖 Manual de usuario</b> o desde la pantalla de ingreso, y funciona sin internet. Con <b>🖨 Imprimir</b> se puede guardar como PDF.</p>
+    </section>
+  </main>
+
+  <script>
+    // Clic en una captura: se ve ampliada; clic otra vez (o Esc) para cerrar
+    document.querySelectorAll("figure img").forEach((img) => img.addEventListener("click", () => {
+      const capa = document.createElement("div");
+      capa.className = "zoom";
+      capa.innerHTML = `<img src="${img.src}" alt="${img.alt.replace(/"/g, "&quot;")}">`;
+      const cerrar = () => { capa.remove(); document.removeEventListener("keydown", tecla); };
+      const tecla = (e) => { if (e.key === "Escape") cerrar(); };
+      capa.addEventListener("click", cerrar);
+      document.addEventListener("keydown", tecla);
+      document.body.append(capa);
+    }));
+  </script>
+</body>
+</html>

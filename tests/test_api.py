@@ -205,3 +205,14 @@ def test_version_y_cache_de_la_pagina(cliente, datos):
     assert cliente.get("/api/yo").json()["version"] == __version__
     for ruta in ("/", "/static/app.js", "/static/estilos.css"):
         assert cliente.get(ruta).headers["cache-control"] == "no-cache"
+
+
+def test_manual_sin_internet_ni_sesion(cliente):
+    r = cliente.get("/manual")
+    assert r.status_code == 200 and "Manual de usuario" in r.text
+    import re
+    imagenes = re.findall(r'src="(/static/manual/[^"]+)"', r.text)
+    assert len(imagenes) == 17
+    for src in imagenes:                                  # todas las capturas están incluidas
+        assert cliente.get(src).status_code == 200
+    assert "http" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', r.text)).replace("http://172.31.60.254:8090", "")

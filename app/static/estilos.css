@@ -228,14 +228,16 @@ dialog::backdrop { background: rgba(20, 30, 50, .45); }
   padding: 12px 18px; border-bottom: 1px solid var(--borde); position: sticky; top: 0; background: var(--panel); z-index: 2;
 }
 .modal-cab h2 { font-size: 17px; margin: 0; }
-.modal-cuerpo { padding: 14px 18px; }
+.modal-cuerpo { padding: 14px 18px; overflow-x: hidden; }
 .modal-pie {
   display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
   padding: 12px 18px; border-top: 1px solid var(--borde); position: sticky; bottom: 0; background: var(--panel);
 }
 .cerrar { background: none; border: 0; font-size: 22px; cursor: pointer; line-height: 1; color: var(--texto-suave); }
 
-.form { display: grid; grid-template-columns: 160px 1fr; gap: 10px 12px; align-items: center; }
+.form { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px 12px; align-items: center; }
+.form select, .form input[type=text], .form input[type=email], .form input[type=url] { width: 100%; }
+.form .fila-campos select, .form .fila-campos input { width: auto; }
 .form > label { color: var(--texto-suave); font-size: 13px; }
 .form .full { grid-column: 1 / -1; }
 .form .fila-campos { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }

@@ -38,4 +38,9 @@ datos\adjuntos\ .............. PDF y correos adjuntos
 datos\registros\pizarra.log .. registro de funcionamiento y errores
 respaldos\ ................... respaldos (copielos a otro equipo seguido)
 
+MANUAL DE USUARIO
+-----------------
+Dentro del sistema: menu (su nombre) -> Manual de usuario, o el enlace de la
+pantalla de ingreso. Funciona sin internet.
+
 Guia completa: INSTALACION-WINDOWS.md

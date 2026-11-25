@@ -1115,6 +1115,7 @@ function conectarEventos() {
   document.addEventListener("click", () => (menu.hidden = true));
   $("#m-admin").onclick = () => administrar();
   $("#m-clave").onclick = cambiarClave;
+  $("#m-manual").onclick = () => window.open("/manual", "_blank", "noopener");
   $("#m-salir").onclick = async () => { await api("POST", "/api/logout").catch(() => {}); location.href = "/login"; };
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("#tv").hidden) { modoTV.salir(); return; }

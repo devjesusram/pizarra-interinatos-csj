@@ -36,6 +36,8 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
   cargo ese día.
 - **Exportación `.ics`:** archivo descargable y enlace de suscripción por funcionario.
 - **Modo TV:** pantalla de solo lectura para un monitor en la oficina.
+- **Manual de usuario incluido:** en `/manual` (menú 👤 → 📖 Manual de usuario, o desde la pantalla de ingreso),
+  con capturas de pantalla y sin necesidad de internet. Se puede imprimir o guardar como PDF.
 - **Usuarios y roles:** OPERADOR / ADMIN, con **auditoría** completa.
 - **Varios operadores a la vez:** las escrituras se atienden de a una (`BEGIN IMMEDIATE`), así que dos personas
   guardando al mismo tiempo no pueden generar cruces. Si dos editan el mismo registro, el segundo recibe un aviso.
