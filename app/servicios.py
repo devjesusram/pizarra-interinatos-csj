@@ -8,7 +8,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from . import config
-from .db import a_fecha, ahora_utc, escritura, iso, todos, uno
+from .db import SIN_FIN, a_fecha, ahora_utc, escritura, iso, todos, uno
 from .validaciones import (Bloqueado, ConflictoVersion, Hallazgo, Nivel, RequiereConfirmacion,
                            dias, f, validar_interinato, validar_licencia)
 
@@ -16,7 +16,7 @@ CAMPOS_LICENCIA = ("personal_id", "tipo_licencia_id", "fecha_inicio", "fecha_fin
                    "organo_aprobador", "nro_resolucion", "correo_remitente", "correo_asunto",
                    "correo_fecha", "enlace_externo", "observaciones")
 CAMPOS_INTERINATO = ("titular_id", "vacante_id", "interino_id", "licencia_id", "fecha_inicio", "fecha_fin",
-                     "acto_designacion", "observaciones")
+                     "acto_designacion", "observaciones", "despacho_texto")
 CAMPOS_VACANTE = ("despacho_id", "cargo_codigo", "secretaria", "fecha_desde", "fecha_hasta", "observaciones")
 
 
@@ -181,9 +181,16 @@ def _cargo_cubierto(conn, datos: dict):
     return r["cargo_codigo"] if r else None
 
 
+def _datos_interinato(d: dict) -> dict:
+    datos = _normalizar(d, CAMPOS_INTERINATO)
+    datos["fecha_fin"] = datos["fecha_fin"] or SIN_FIN          # en blanco = sin fecha de desvinculación
+    datos["despacho_texto"] = (datos["despacho_texto"] or "").strip() or None
+    return datos
+
+
 def crear_interinato(conn, d: dict, usuario_id: int,
                      confirmar_advertencias: bool = False) -> tuple[int, list[Hallazgo]]:
-    datos = _normalizar(d, CAMPOS_INTERINATO)
+    datos = _datos_interinato(d)
     with escritura(conn):
         bloqueos, avisos, infos = _separar(validar_interinato(
             conn, datos["titular_id"], datos["interino_id"], datos["fecha_inicio"], datos["fecha_fin"],
@@ -205,7 +212,7 @@ def crear_interinato(conn, d: dict, usuario_id: int,
 
 def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
                       confirmar_advertencias: bool = False) -> list[Hallazgo]:
-    datos = _normalizar(d, CAMPOS_INTERINATO)
+    datos = _datos_interinato(d)
     with escritura(conn):
         actual = uno(conn, "SELECT estado FROM interinatos WHERE id = ?", (int_id,))
         if not actual:
@@ -261,13 +268,10 @@ def excesos_de_tope(conn, cargo: str, tope: int, hoy: date) -> list[str]:
     for lista in por_persona.values():
         if len(lista) <= tope:
             continue
-        inicio = max(hoy, min(a_fecha(x["fecha_inicio"]) for x in lista))
-        fin = max(a_fecha(x["fecha_fin"]) for x in lista)
-        for d in dias(inicio, fin):
-            n = sum(1 for x in lista if x["fecha_inicio"] <= d.isoformat() <= x["fecha_fin"])
-            if n > tope:
-                excedidos.append(f"{lista[0]['nombre_completo']} cubre {n} despachos el {f(d)}")
-                break
+        from .validaciones import pico_simultaneo
+        n, dia = pico_simultaneo(lista, hoy, a_fecha(SIN_FIN))
+        if n > tope:
+            excedidos.append(f"{lista[0]['nombre_completo']} cubre {n} despachos el {f(dia)}")
     return excedidos
 
 

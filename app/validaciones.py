@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from enum import Enum
 
-from .db import a_fecha, iso, todos, uno
+from .db import SIN_FIN, a_fecha, iso, todos, uno
 
 
 class Nivel(str, Enum):
@@ -52,7 +52,22 @@ class ConflictoVersion(Exception):
 
 
 def f(d) -> str:
+    if iso(d) == SIN_FIN:
+        return "(sin fecha de desvinculación)"
     return a_fecha(d).strftime("%d/%m/%Y")
+
+
+def pico_simultaneo(periodos, ini: date, fin: date):
+    """Máximo de períodos que se superponen en un mismo día dentro de [ini, fin], y ese día.
+    Basta con mirar el inicio del rango y el inicio de cada período (no recorre día por día,
+    así funciona también con períodos sin fecha de fin)."""
+    candidatos = {iso(ini)} | {p["fecha_inicio"] for p in periodos if iso(ini) <= p["fecha_inicio"] <= iso(fin)}
+    pico, dia = 0, None
+    for d in sorted(candidatos):
+        n = sum(1 for p in periodos if p["fecha_inicio"] <= d <= p["fecha_fin"])
+        if n > pico:
+            pico, dia = n, d
+    return pico, dia
 
 
 def dias(ini: date, fin: date):
@@ -148,11 +163,7 @@ def validar_interinato(conn, titular_id: int | None, interino_id: int, ini, fin,
           AND i.fecha_inicio <= :fin AND i.fecha_fin >= :ini
           AND (:exc IS NULL OR i.id <> :exc)
         ORDER BY i.fecha_inicio""", p)
-    pico, dia_pico = 0, None
-    for d in dias(ini, fin):
-        n = sum(1 for c in cubre if c["fecha_inicio"] <= d.isoformat() <= c["fecha_fin"])
-        if n > pico:
-            pico, dia_pico = n, d
+    pico, dia_pico = pico_simultaneo(cubre, ini, fin)
     tope = inte["tope"]
     if tope is not None and pico + 1 > tope:
         for r in cubre:
@@ -194,10 +205,15 @@ def validar_interinato(conn, titular_id: int | None, interino_id: int, ini, fin,
         h.append(Hallazgo(B, "R7", f"{nom} figura ausente (lo cubre {r['quien']}) del "
                                    f"{f(r['fecha_inicio'])} al {f(r['fecha_fin'])}."))
 
-    # R8 (advertencia): días del período en que no corresponde cubrir
+    # R8 (advertencia): días del período en que no corresponde cubrir.
+    # Sin fecha de desvinculación se revisa solo el comienzo (no hay un final contra el cual contar).
+    abierto = iso(fin) == SIN_FIN
+    fin_conteo = min(fin, ini + timedelta(days=730))
     if vacante_id is not None:
-        periodo = [{"fecha_inicio": vac["fecha_desde"], "fecha_fin": vac["fecha_hasta"] or "9999-12-31"}]
-        n = sum(1 for d in dias(ini, fin) if not _contiene(periodo, d))
+        periodo = [{"fecha_inicio": vac["fecha_desde"], "fecha_fin": vac["fecha_hasta"] or SIN_FIN}]
+        hasta_vac = a_fecha(vac["fecha_hasta"]) if vac["fecha_hasta"] else None
+        n = sum(1 for d in dias(ini, min(fin_conteo, hasta_vac or fin_conteo) if abierto else fin_conteo)
+                if not _contiene(periodo, d))
         if n > 0:
             hasta = f" hasta el {f(vac['fecha_hasta'])}" if vac["fecha_hasta"] else ""
             h.append(Hallazgo(A, "R8", f"{n} día(s) de este período quedan fuera de la vacancia "
@@ -206,10 +222,15 @@ def validar_interinato(conn, titular_id: int | None, interino_id: int, ini, fin,
         lic_tit = todos(conn, """SELECT fecha_inicio, fecha_fin FROM licencias
                                  WHERE personal_id = :tit AND estado = 'VIGENTE'
                                    AND fecha_inicio <= :fin AND fecha_fin >= :ini""", p)
-        n = sum(1 for d in dias(ini, fin) if not _contiene(lic_tit, d))
-        if n > 0:
-            h.append(Hallazgo(A, "R8", f"{cubierto} no tiene licencia registrada en {n} día(s) "
-                                       f"de este período."))
+        if abierto:
+            if not _contiene(lic_tit, ini):
+                h.append(Hallazgo(A, "R8", f"{cubierto} no tiene licencia registrada al comienzo del interinazgo "
+                                           f"({f(ini)})."))
+        else:
+            n = sum(1 for d in dias(ini, fin_conteo) if not _contiene(lic_tit, d))
+            if n > 0:
+                h.append(Hallazgo(A, "R8", f"{cubierto} no tiene licencia registrada en {n} día(s) "
+                                           f"de este período."))
     return h
 
 

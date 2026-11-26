@@ -167,9 +167,12 @@ def demo() -> None:
                 "correo_asunto": f"Licencia {tipo.lower()} (dato de ejemplo)"}, uid)[0]
 
         def inter(desp_t, desp_i, cargo, ini, dias, lic_id=None):
+            """dias=None: sin fecha de desvinculación. DESPACHO = el del titular, abreviado."""
             return servicios.crear_interinato(conn, {
                 "titular_id": ids[(desp_t, cargo)], "interino_id": ids[(desp_i, cargo)],
-                "licencia_id": lic_id, "fecha_inicio": ini, "fecha_fin": ini + timedelta(days=dias - 1),
+                "licencia_id": lic_id, "fecha_inicio": ini,
+                "fecha_fin": ini + timedelta(days=dias - 1) if dias else None,
+                "despacho_texto": DESPACHOS[desp_t][0],
                 "acto_designacion": "DEMO"}, uid, confirmar_advertencias=True)[0]
 
         # Un juez (despacho 4) cubre a dos jueces a la vez
@@ -188,6 +191,12 @@ def demo() -> None:
         lic(9, "UJIER", "Particular", lunes + timedelta(days=9), 2)
         # Licencia futura sin cubrir
         lic(5, "JUEZ", "Maternidad", lunes + timedelta(days=14), 30)
+        # Para el tablero: uno sin fecha de desvinculación, uno a desvincular en 2 días,
+        # uno ya desvinculado y uno que empieza la semana próxima
+        inter(7, 9, "JUEZ", lunes - timedelta(days=7), None)
+        inter(8, 3, "JUEZ", hoy - timedelta(days=5), 8)
+        inter(1, 3, "JUEZ", lunes - timedelta(days=40), 10)
+        inter(6, 1, "JUEZ", lunes + timedelta(days=8), 5)
         # Actuaria de la Sria. Nº 1 que además está a cargo de la Sria. Nº 2 (vacante)
         # del Juzgado Penal de Garantías 1º Turno
         with db.escritura(conn):

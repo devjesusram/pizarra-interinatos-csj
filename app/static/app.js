@@ -13,8 +13,8 @@ const aFecha = (iso) => new Date(iso + "T00:00:00Z");
 const aIso = (d) => d.toISOString().slice(0, 10);
 const sumar = (iso, n) => { const d = aFecha(iso); d.setUTCDate(d.getUTCDate() + n); return aIso(d); };
 const difDias = (a, b) => Math.round((aFecha(b) - aFecha(a)) / 86400000);
-const fmt = (iso) => (iso ? iso.slice(8, 10) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : "");
-const fmtCorto = (iso) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
+const fmt = (iso) => (!iso ? "" : iso === "9999-12-31" ? "(sin fecha)" : iso.slice(8, 10) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4));
+const fmtCorto = (iso) => (iso === "9999-12-31" ? "sin fecha" : iso.slice(8, 10) + "/" + iso.slice(5, 7));
 const fmtHora = (ts) => (ts ? new Date(ts).toLocaleString("es-PY", { dateStyle: "short", timeStyle: "short" }) : "");
 const lunesDe = (iso) => { const d = aFecha(iso); const w = (d.getUTCDay() + 6) % 7; return sumar(iso, -w); };
 const finDeSemana = (iso) => [0, 6].includes(aFecha(iso).getUTCDay());
@@ -124,6 +124,7 @@ const E = {
   yo: null, hoy: null, cat: null, datos: null, alertas: null,
   desde: null, largo: pref.leer("largo", 14), vista: pref.leer("vista", "cargo"),
   colapsados: new Set(pref.leer("colapsados", [])),
+  modo: pref.leer("modo", "tablero"), anio: new Date().getFullYear(), tablero: null,
 };
 const personaPorId = () => new Map(E.datos.personal.map((p) => [p.id, p]));
 
@@ -150,11 +151,14 @@ async function iniciar() {
   $("#l-turno").hidden = !turnos.length;
   $("#f-turno").insertAdjacentHTML("beforeend", turnos.map((t) => `<option>${esc(t)}</option>`).join(""));
   $("#f-novedades").checked = pref.leer("novedades", true);
+  E.anio = +E.hoy.slice(0, 4);
   conectarEventos();
+  aplicarModo();
   await recargar();
 }
 
 async function recargar() {
+  if (E.modo === "tablero") return recargarTablero();
   const hasta = sumar(E.desde, E.largo - 1);
   $("#rango").textContent = `${fmtCorto(E.desde)} – ${fmt(hasta)}`;
   try {
@@ -168,6 +172,96 @@ async function recargar() {
     dibujarAlertas();
     dibujarPizarra();
   } catch (e) { mostrarError(e); }
+}
+
+// ── Tablero: la pizarra acrílica de interinazgos, en recuadros ───────────
+const SIN_FIN = "9999-12-31";
+const PLURAL = { JUEZ: "Jueces", ACTUARIO: "Actuarios/as Judiciales", SECRETARIO: "Secretarios/as de Juzgado", UJIER: "Ujieres" };
+
+function estadoRecuadro(i, hoy) {
+  const dias = (iso) => difDias(hoy, iso);
+  if (i.estado === "EN_CONFLICTO") return { clase: "conflicto", texto: "⚡ En conflicto: el interino tiene licencia" };
+  if (i.fecha_fin !== SIN_FIN && i.fecha_fin < hoy) return { clase: "vencido", texto: `Desvinculado el ${fmt(i.fecha_fin)}` };
+  if (i.fecha_inicio > hoy) {
+    const n = dias(i.fecha_inicio);
+    return { clase: "proximo", texto: n === 1 ? "Empieza mañana" : `Empieza en ${n} días` };
+  }
+  if (i.fecha_fin === SIN_FIN) return { clase: "vigente", texto: "Vigente · sin fecha de desvinculación" };
+  const n = dias(i.fecha_fin);
+  if (n <= 3) return { clase: "por-vencer", texto: n === 0 ? "⚠ Se desvincula HOY" : n === 1 ? "⚠ Se desvincula mañana" : `⚠ Se desvincula en ${n} días` };
+  return { clase: "vigente", texto: "Vigente" };
+}
+
+async function recargarTablero() {
+  $("#rango").textContent = `Año ${E.anio}`;
+  const hoyIso = E.hoy || aIso(new Date());
+  const desde = lunesDe(hoyIso);
+  try {
+    const [t, datos] = await Promise.all([
+      api("GET", `/api/tablero?anio=${E.anio}`),
+      api("GET", `/api/pizarra?desde=${desde}&hasta=${sumar(desde, 13)}`),   // personal y licencias para los formularios
+    ]);
+    E.tablero = t;
+    E.datos = datos;
+    E.hoy = t.hoy;
+    dibujarTablero();
+  } catch (e) { mostrarError(e); }
+}
+
+function dibujarTablero() {
+  const t = E.tablero, hoy = E.hoy, tab = $("#tablero");
+  if (!t) return;
+  const ver = $("#f-estado").value, fc = $("#f-cargo").value;
+  const q = $("#f-buscar").value.trim().toLowerCase();
+  const filas = t.interinatos.map((i) => ({ i, e: estadoRecuadro(i, hoy) })).filter(({ i, e }) => {
+    if (fc && i.cargo_codigo !== fc) return false;
+    if (ver === "activos" && e.clase === "vencido") return false;
+    if (ver === "desvinculados" && e.clase !== "vencido") return false;
+    const texto = `${i.titular} ${i.interino} ${i.despacho_texto || ""} ${i.despacho_titular}`.toLowerCase();
+    return !q || texto.includes(q);
+  });
+  const orden = { "por-vencer": 0, conflicto: 1, vigente: 2, proximo: 3, vencido: 4 };
+  const grupos = E.cat.cargos.map((c) => ({ c, xs: filas.filter((f) => f.i.cargo_codigo === c.codigo)
+    .sort((a, b) => orden[a.e.clase] - orden[b.e.clase] || (a.i.fecha_inicio < b.i.fecha_inicio ? -1 : 1)) }))
+    .filter((g) => g.xs.length);
+  const cuenta = (cl) => filas.filter((f) => f.e.clase === cl).length;
+  const recuadro = ({ i, e }) => `<div class="recuadro r-${e.clase}" data-int="${i.id}" tabindex="0" role="button" title="Ver, editar o desvincular">
+      <div class="r-estado">${esc(e.texto)}</div>
+      <dl>
+        <dt>TITULAR</dt><dd>${esc(i.titular)}</dd>
+        <dt>INTERINO</dt><dd>${esc(i.interino)}</dd>
+        <dt>FECHA</dt><dd>${fmt(i.fecha_inicio)}</dd>
+        <dt>DESPACHO</dt><dd>${i.despacho_texto ? esc(i.despacho_texto) : `<span class="r-auto">${esc(i.despacho_titular)}</span>`}</dd>
+        <dt>DESVINCULAR</dt><dd>${i.fecha_fin === SIN_FIN ? '<span class="r-auto">— (sin fecha)</span>' : fmt(i.fecha_fin)}</dd>
+      </dl></div>`;
+  tab.innerHTML = `<div class="pizarra-acrilica">
+    <h2 class="p-titulo">INTERINAZGOS JUZGADOS ${t.anio}</h2>
+    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan en 3 días o menos</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
+    ${grupos.map((g) => `<h3 class="p-grupo">${esc(PLURAL[g.c.codigo] || g.c.nombre)}</h3>
+      <div class="recuadros">${g.xs.map(recuadro).join("")}</div>`).join("")
+      || `<div class="vacio">No hay interinazgos ${ver === "desvinculados" ? "desvinculados" : "vigentes"} para mostrar en ${t.anio}.<br>
+          Use <b>+ Interinazgo</b> para anotar el primero.</div>`}
+    <div class="recuadros"><div class="recuadro r-nuevo" id="r-nuevo" tabindex="0" role="button">+ Nuevo interinazgo</div></div>
+  </div>`;
+  $$(".recuadro[data-int]", tab).forEach((el) => {
+    el.onclick = () => verInterinato(+el.dataset.int);
+    el.onkeydown = (ev) => { if (ev.key === "Enter") verInterinato(+el.dataset.int); };
+  });
+  $("#r-nuevo", tab).onclick = () => formInterinato();
+}
+
+function redibujar() {
+  if (E.modo === "tablero") dibujarTablero(); else dibujarPizarra();
+}
+
+function aplicarModo() {
+  document.body.classList.toggle("modo-tablero", E.modo === "tablero");
+  document.body.classList.toggle("modo-calendario", E.modo !== "tablero");
+  $("#modo-tablero").classList.toggle("activo", E.modo === "tablero");
+  $("#modo-calendario").classList.toggle("activo", E.modo !== "tablero");
+  $("#ant").title = E.modo === "tablero" ? "Año anterior (←)" : "Semana anterior (←)";
+  $("#sig").title = E.modo === "tablero" ? "Año siguiente (→)" : "Semana siguiente (→)";
+  $("#hoy").title = E.modo === "tablero" ? "Año actual (T)" : "Ir a hoy (T)";
 }
 
 // ── Alertas ───────────────────────────────────────────────────────────
@@ -649,13 +743,18 @@ async function formInterinato(ini = {}, existente = null) {
       <label><input type="radio" name="modo" value="persona" ${modo === "persona" ? "checked" : ""}> Una persona ausente</label>
       <label><input type="radio" name="modo" value="vacante" ${modo === "vacante" ? "checked" : ""} ${vacantes.length ? "" : "disabled"}> Un puesto vacante</label>
       ${vacantes.length ? "" : `<span class="ayuda">(no hay puestos vacantes cargados: se cargan en Administración → Vacantes)</span>`}</div>
-    <label class="req fila-persona" for="i-tit">Titular (ausente)</label>
+    <label class="req fila-persona" for="i-tit">Titular</label>
     <select id="i-tit" class="fila-persona">${opcionesPersonal(v.titular_id)}</select>
     <label class="req fila-vacante" for="i-vac">Puesto vacante</label>
     <select id="i-vac" class="fila-vacante">${opcionesVac}</select>
-    <label class="req">Período</label>
-    <div class="fila-campos">Desde <input type="date" id="i-ini" required value="${esc(v.fecha_inicio || "")}">
-      Hasta <input type="date" id="i-fin" required value="${esc(v.fecha_fin || "")}"></div>
+    <label class="req" for="i-ini">Fecha</label>
+    <div class="fila-campos"><input type="date" id="i-ini" required value="${esc(v.fecha_inicio || "")}">
+      <span class="ayuda">inicio del interinazgo</span></div>
+    <label for="i-fin">Desvincular</label>
+    <div class="fila-campos"><input type="date" id="i-fin" value="${esc(v.fecha_fin && v.fecha_fin !== "9999-12-31" ? v.fecha_fin : "")}">
+      <span class="ayuda">Déjelo vacío si todavía no se sabe: queda vigente hasta que lo complete.</span></div>
+    <label for="i-desp">Despacho</label>
+    <input type="text" id="i-desp" maxlength="120" placeholder="Referencia, por ejemplo: Penal Gtías. 1º Turno" value="${esc(v.despacho_texto || "")}">
     <label>Motivo</label><div id="i-motivo" class="ayuda"></div>
     <div class="full" id="i-generales"></div>
     <label class="req">Interino</label>
@@ -666,7 +765,7 @@ async function formInterinato(ini = {}, existente = null) {
     <label for="i-obs">Observaciones</label><textarea id="i-obs">${esc(v.observaciones || "")}</textarea>
   </form>`;
   const { cuerpo } = modal($("#modal"), {
-    titulo: existente ? `Editar interinato #${existente.id}` : "Asignar interino", cuerpo: html,
+    titulo: existente ? `Editar interinazgo #${existente.id}` : "Nuevo interinazgo", cuerpo: html,
     pie: [{ texto: "Cancelar" }, { texto: existente ? "Guardar cambios" : "Asignar", clase: "primario", accion: () => guardar(false) }],
   });
   const f = $("#f-int", cuerpo);
@@ -707,10 +806,10 @@ async function formInterinato(ini = {}, existente = null) {
     $$("[name=cand]", el).forEach((r) => (r.onchange = () => (elegido = +r.value)));
   };
   const cargarCand = async () => {
-    const a = $("#i-ini", f).value, b = $("#i-fin", f).value;
+    const a = $("#i-ini", f).value, b = $("#i-fin", f).value || "9999-12-31";
     const id = modo === "vacante" ? +$("#i-vac", f).value : +$("#i-tit", f).value;
     motivo();
-    if (!id || !a || !b || b < a) { $("#i-cand", f).innerHTML = `<div class="vacio">Elija a quién cubre y las fechas.</div>`; $("#i-generales", f).innerHTML = ""; return; }
+    if (!id || !a || b < a) { $("#i-cand", f).innerHTML = `<div class="vacio">Elija a quién cubre y las fechas.</div>`; $("#i-generales", f).innerHTML = ""; return; }
     const n = ++pedido;
     $("#i-cand", f).innerHTML = `<div class="vacio">Verificando disponibilidad…</div>`;
     try {
@@ -724,6 +823,21 @@ async function formInterinato(ini = {}, existente = null) {
     } catch (e) { mostrarError(e); }
   };
   $$("[name=modo]", f).forEach((r) => (r.onchange = () => { modo = r.value; elegido = null; licenciaId = null; mostrarModo(); cargarCand(); }));
+  // DESPACHO se propone con el despacho del titular (o del puesto vacante); se puede escribir otro
+  let despachoAuto = existente ? null : "";
+  const proponerDespacho = (texto) => {
+    const campo = $("#i-desp", f);
+    if (campo.value === "" || campo.value === despachoAuto) { campo.value = texto || ""; despachoAuto = campo.value; }
+  };
+  $("#i-tit", f).addEventListener("change", () => {
+    const t = pm.get(+$("#i-tit", f).value);
+    if (t) proponerDespacho(conTurno(t.despacho, t.turno));
+  });
+  $("#i-vac", f).addEventListener("change", () => {
+    const x = vacantes.find((y) => y.id === +$("#i-vac", f).value);
+    if (x) proponerDespacho(conTurno(x.despacho, x.turno) + (x.secretaria ? ` · Sria. ${x.secretaria}` : ""));
+  });
+  if (!existente && v.titular_id) { const t = pm.get(v.titular_id); if (t) proponerDespacho(conTurno(t.despacho, t.turno)); }
   $("#i-tit", f).onchange = () => { licenciaId = null; elegido = null; cargarCand(); };
   $("#i-vac", f).onchange = () => {
     elegido = null;
@@ -732,7 +846,7 @@ async function formInterinato(ini = {}, existente = null) {
     if (x && x.fecha_hasta && !$("#i-fin", f).value) $("#i-fin", f).value = x.fecha_hasta;
     cargarCand();
   };
-  $("#i-ini", f).onchange = () => { if (!$("#i-fin", f).value || $("#i-fin", f).value < $("#i-ini", f).value) $("#i-fin", f).value = $("#i-ini", f).value; cargarCand(); };
+  $("#i-ini", f).onchange = () => { if ($("#i-fin", f).value && $("#i-fin", f).value < $("#i-ini", f).value) $("#i-fin", f).value = $("#i-ini", f).value; cargarCand(); };
   $("#i-fin", f).onchange = cargarCand;
   $("#i-buscar", f).oninput = pintarCand;
   mostrarModo();
@@ -745,7 +859,8 @@ async function formInterinato(ini = {}, existente = null) {
       titular_id: modo === "persona" ? +$("#i-tit", f).value : null,
       vacante_id: modo === "vacante" ? +$("#i-vac", f).value : null,
       interino_id: elegido, licencia_id: modo === "persona" ? licenciaId : null,
-      fecha_inicio: $("#i-ini", f).value, fecha_fin: $("#i-fin", f).value,
+      fecha_inicio: $("#i-ini", f).value, fecha_fin: $("#i-fin", f).value || null,
+      despacho_texto: $("#i-desp", f).value,
       acto_designacion: $("#i-acto", f).value, observaciones: $("#i-obs", f).value,
       confirmar_advertencias: confirmado,
     };
@@ -756,7 +871,7 @@ async function formInterinato(ini = {}, existente = null) {
       $("#modal").close();
       await recargar();
       const nombre = pm.get(elegido)?.nombre_completo || "";
-      toast(`Interinato guardado: ${nombre}.` + (r.avisos?.length ? " " + r.avisos.map((a) => a.mensaje).join(" ") : ""), 6000);
+      toast(`Interinazgo guardado: ${nombre}.` + (r.avisos?.length ? " " + r.avisos.map((a) => a.mensaje).join(" ") : ""), 6000);
     } catch (e) {
       if (e.status === 428) {
         const ok = await confirmar("Confirme para continuar", listaHallazgos(e.data.hallazgos) +
@@ -782,7 +897,9 @@ async function verInterinato(id) {
     <dt>Cargo</dt><dd>${esc(i.cargo)} <span class="chip ${i.estado}">${i.estado.replace("_", " ")}</span></dd>
     ${cubre}
     <dt>Interino</dt><dd><b>${esc(i.interino)}</b> — ${esc(i.despacho_interino)}</dd>
-    <dt>Período</dt><dd>${fmt(i.fecha_inicio)} al ${fmt(i.fecha_fin)}</dd>
+    <dt>Fecha</dt><dd>${fmt(i.fecha_inicio)}</dd>
+    <dt>Desvincular</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(i.fecha_fin)}</dd>
+    <dt>Despacho</dt><dd>${esc(i.despacho_texto || "—")}</dd>
     <dt>Acto de designación</dt><dd>${esc(i.acto_designacion || "—")}</dd>
     ${i.observaciones ? `<dt>Observaciones</dt><dd>${esc(i.observaciones)}</dd>` : ""}
     ${i.motivo_anulacion ? `<dt>Motivo de anulación</dt><dd>${esc(i.motivo_anulacion)}</dd>` : ""}
@@ -792,8 +909,23 @@ async function verInterinato(id) {
   if (i.estado !== "ANULADO") {
     pie.unshift({ texto: "Anular", clase: "peligro", accion: () => anular("interinatos", i) });
     pie.push({ texto: "Editar", clase: "primario", accion: () => { setTimeout(() => formInterinato({}, i), 0); } });
+    if (i.fecha_inicio <= E.hoy && (i.fecha_fin === "9999-12-31" || i.fecha_fin > E.hoy)) {
+      pie.push({ texto: "Desvincular hoy", clase: "primario", accion: async () => {
+        const ok = await confirmar("Desvincular", `<p>¿Desvincular a <b>${esc(i.interino)}</b> hoy, <b>${fmt(E.hoy)}</b>?</p>
+          <p class="ayuda">Se anota hoy como fecha de desvinculación (último día del interinazgo). Mañana pasa a «Desvinculados»
+          y queda en el historial.</p>`, "Desvincular");
+        if (!ok) return false;
+        try {
+          await api("PUT", `/api/interinatos/${i.id}`, { titular_id: i.titular_id, vacante_id: i.vacante_id, interino_id: i.interino_id,
+            licencia_id: i.licencia_id, fecha_inicio: i.fecha_inicio, fecha_fin: E.hoy, despacho_texto: i.despacho_texto,
+            acto_designacion: i.acto_designacion, observaciones: i.observaciones, version: i.version, confirmar_advertencias: true });
+          toast(`${i.interino} desvinculado.`);
+          await recargar();
+        } catch (e) { mostrarError(e); return false; }
+      } });
+    }
   }
-  modal($("#modal"), { titulo: `Interinato #${i.id}`, cuerpo: html, pie });
+  modal($("#modal"), { titulo: `Interinazgo #${i.id}`, cuerpo: html, pie });
 }
 
 // ── Puestos vacantes ──────────────────────────────────────────────────
@@ -1238,15 +1370,20 @@ function modoTV() {
 
 // ── Eventos ───────────────────────────────────────────────────────────
 function conectarEventos() {
-  $("#ant").onclick = () => { E.desde = sumar(E.desde, -7); recargar(); };
-  $("#sig").onclick = () => { E.desde = sumar(E.desde, 7); recargar(); };
-  $("#hoy").onclick = () => { E.desde = lunesDe(E.hoy); recargar(); };
+  $("#ant").onclick = () => { if (E.modo === "tablero") E.anio--; else E.desde = sumar(E.desde, -7); recargar(); };
+  $("#sig").onclick = () => { if (E.modo === "tablero") E.anio++; else E.desde = sumar(E.desde, 7); recargar(); };
+  $("#hoy").onclick = () => { if (E.modo === "tablero") E.anio = +E.hoy.slice(0, 4); else E.desde = lunesDe(E.hoy); recargar(); };
+  const cambiarModo = (m) => { E.modo = m; pref.guardar("modo", m); aplicarModo(); recargar(); };
+  $("#modo-tablero").onclick = () => cambiarModo("tablero");
+  $("#modo-calendario").onclick = () => cambiarModo("calendario");
+  $("#f-estado").onchange = dibujarTablero;
+  $("#btn-imprimir").onclick = () => window.print();
   $("#largo").onchange = (e) => { E.largo = +e.target.value; pref.guardar("largo", E.largo); recargar(); };
   $("#vista").onchange = (e) => { E.vista = e.target.value; pref.guardar("vista", E.vista); dibujarPizarra(); };
-  ["#f-cargo", "#f-fuero", "#f-localidad", "#f-turno"].forEach((s) => ($(s).onchange = dibujarPizarra));
+  ["#f-cargo", "#f-fuero", "#f-localidad", "#f-turno"].forEach((s) => ($(s).onchange = redibujar));
   $("#f-novedades").onchange = (e) => { pref.guardar("novedades", e.target.checked); dibujarPizarra(); };
   let t;
-  $("#f-buscar").oninput = () => { clearTimeout(t); t = setTimeout(dibujarPizarra, 150); };
+  $("#f-buscar").oninput = () => { clearTimeout(t); t = setTimeout(redibujar, 150); };
   $("#btn-licencia").onclick = () => formLicencia();
   $("#btn-interinato").onclick = () => formInterinato();
   $("#btn-ics").onclick = exportar;
@@ -1263,7 +1400,7 @@ function conectarEventos() {
     if ($("#modal").open || $("#modal2").open || !$("#tv").hidden) return;
     if (e.target.matches("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === "l") { e.preventDefault(); formLicencia(); }
+    if (k === "l" && E.modo !== "tablero") { e.preventDefault(); formLicencia(); }
     else if (k === "i") { e.preventDefault(); formInterinato(); }
     else if (k === "t") $("#hoy").click();
     else if (e.key === "ArrowLeft") $("#ant").click();

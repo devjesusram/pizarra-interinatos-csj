@@ -216,6 +216,41 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .leyenda .l-vac::before { background: repeating-linear-gradient(135deg, #eceff3 0 4px, #dde2e9 4px 5px); border: 1px solid #b9c0cc; }
 .leyenda .l-inh::before { background: var(--inhabil); border: 1px solid var(--borde); }
 
+/* ── Modo Tablero / Calendario ─────────────────────────── */
+.modo-tablero .solo-cal, .modo-calendario .solo-tab { display: none !important; }
+.modos { display: inline-flex; border: 1px solid var(--borde-fuerte); border-radius: var(--radio); overflow: hidden; }
+.modos button { border: 0; background: var(--panel); padding: 6px 12px; cursor: pointer; }
+.modos button + button { border-left: 1px solid var(--borde-fuerte); }
+.modos button.activo { background: var(--primario); color: #fff; font-weight: 600; }
+
+/* ── Tablero (la pizarra acrílica, en recuadros) ─────────── */
+.pizarra-acrilica { padding: 18px 20px 40px; max-width: 1500px; margin: 0 auto; }
+.p-titulo { text-align: center; font-size: 26px; letter-spacing: .06em; margin: 4px 0 2px; color: var(--primario); }
+.p-resumen { text-align: center; color: var(--texto-suave); margin: 0 0 14px; }
+.c-ambar { color: var(--sin-cubrir); } .c-violeta { color: var(--conflicto); }
+.p-grupo { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-suave);
+  border-bottom: 1px solid var(--borde); padding-bottom: 4px; margin: 18px 0 10px; }
+.recuadros { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.recuadro { background: var(--panel); border: 2px solid var(--borde-fuerte); border-radius: 10px; padding: 12px 14px;
+  cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.recuadro:hover, .recuadro:focus-visible { box-shadow: 0 4px 14px rgba(20,30,50,.16); }
+.recuadro dl { display: grid; grid-template-columns: 108px 1fr; gap: 4px 8px; margin: 0; }
+.recuadro dt { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--texto-suave); padding-top: 2px; }
+.recuadro dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.r-auto { font-weight: 400; color: var(--texto-suave); font-style: italic; }
+.r-estado { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 3px 8px; margin: -2px 0 10px; display: inline-block; }
+.r-vigente { border-color: #a9d5ac; } .r-vigente .r-estado { background: var(--cubierto-fondo); color: var(--cubierto); }
+.r-por-vencer { border-color: var(--sin-cubrir); background: #fffaf0; } .r-por-vencer .r-estado { background: var(--sin-cubrir-fondo); color: #7a4a00; }
+.r-proximo { border-color: #9cbfe8; } .r-proximo .r-estado { background: var(--interino-fondo); color: var(--interino); }
+.r-conflicto { border-color: var(--conflicto); } .r-conflicto .r-estado { background: #f3e5f5; color: var(--conflicto); }
+.r-vencido { border-style: dashed; opacity: .75; } .r-vencido .r-estado { background: var(--inhabil); color: var(--texto-suave); }
+.r-nuevo { border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 80px;
+  color: var(--primario); font-weight: 700; }
+@media print {
+  .modo-tablero .barra, .modo-tablero .herramientas { display: none !important; }
+  .recuadro { break-inside: avoid; box-shadow: none; } .r-nuevo { display: none; }
+}
+
 /* ── Modales ────────────────────────────────────────────── */
 dialog {
   border: 0; border-radius: 10px; padding: 0; box-shadow: var(--sombra);

@@ -212,7 +212,7 @@ def test_manual_sin_internet_ni_sesion(cliente):
     assert r.status_code == 200 and "Manual de usuario" in r.text
     import re
     imagenes = re.findall(r'src="(/static/manual/[^"]+)"', r.text)
-    assert len(imagenes) == 19
+    assert len(imagenes) == 22
     for src in imagenes:                                  # todas las capturas están incluidas
         assert cliente.get(src).status_code == 200
     assert "http" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', r.text)).replace("http://172.31.60.254:8090", "")
@@ -280,3 +280,20 @@ def test_mover_funcionario_al_equipo_de_otro_despacho(cliente, datos, conn):
         assert r.status_code == 200
     equipo = [x for x in cliente.get("/api/personal").json() if x["despacho_id"] == despacho_juez and x["cargo_codigo"] == "SECRETARIO"]
     assert sorted(x["secretaria"] or "" for x in equipo) == ["", "Nº 1", "Nº 2"]   # la original + las dos nuevas
+
+
+def test_tablero_y_calendario_con_interinazgo_abierto(cliente, datos):
+    entrar(cliente)
+    r = cliente.post("/api/interinatos", json={"titular_id": datos["juez1"], "interino_id": datos["juez2"],
+                                               "fecha_inicio": "2026-11-23", "fecha_fin": "",
+                                               "despacho_texto": "Penal Gtías. 1º", "confirmar_advertencias": True})
+    assert r.status_code == 201
+    t = cliente.get("/api/tablero?anio=2026").json()
+    rec = t["interinatos"][0]
+    assert rec["fecha_fin"] == "9999-12-31" and rec["despacho_texto"] == "Penal Gtías. 1º" and rec["cargo"] == "Juez"
+    assert cliente.get("/api/tablero?anio=2027").json()["interinatos"]        # sigue vigente el año siguiente
+    assert not cliente.get("/api/tablero?anio=2025").json()["interinatos"]
+    disp = cliente.get(f"/api/disponibilidad?titular_id={datos['juez3']}&desde=2026-11-23&hasta=9999-12-31")
+    assert disp.status_code == 200
+    ics = cliente.get(f"/api/exportar.ics?desde=2026-11-01&hasta=2026-12-31&personal_id={datos['juez2']}").text
+    assert "sin fecha de desvinculaci" in ics and "DTEND;VALUE=DATE:20261124" in ics

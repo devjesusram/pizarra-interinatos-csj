@@ -14,7 +14,7 @@
       <span class="rango" id="rango"></span>
       <button id="sig" title="Semana siguiente (→)">▶</button>
       <button id="hoy" title="Ir a hoy (T)">Hoy</button>
-      <select id="largo" aria-label="Cantidad de semanas">
+      <select id="largo" class="solo-cal" aria-label="Cantidad de semanas">
         <option value="14">2 semanas</option>
         <option value="28">4 semanas</option>
         <option value="42">6 semanas</option>
@@ -34,27 +34,39 @@
   </header>
 
   <div class="herramientas">
-    <button class="btn primario" id="btn-licencia">+ Licencia <kbd>L</kbd></button>
-    <button class="btn primario" id="btn-interinato">+ Interinato <kbd>I</kbd></button>
-    <label class="ocultar-movil">Vista
+    <div class="modos" role="tablist">
+      <button id="modo-tablero" role="tab">🗂 Tablero</button>
+      <button id="modo-calendario" role="tab">📅 Calendario</button>
+    </div>
+    <button class="btn primario" id="btn-interinato">+ Interinazgo <kbd>I</kbd></button>
+    <button class="btn primario solo-cal" id="btn-licencia">+ Licencia <kbd>L</kbd></button>
+    <label class="solo-tab">Mostrar
+      <select id="f-estado">
+        <option value="activos">Vigentes y por empezar</option>
+        <option value="desvinculados">Desvinculados</option>
+        <option value="todos">Todos del año</option>
+      </select>
+    </label>
+    <label class="ocultar-movil solo-cal">Vista
       <select id="vista">
         <option value="cargo">Por cargo</option>
         <option value="despacho">Por despacho</option>
       </select>
     </label>
     <label>Cargo <select id="f-cargo"><option value="">Todos</option></select></label>
-    <label class="ocultar-movil">Fuero <select id="f-fuero"><option value="">Todos</option></select></label>
-    <label class="ocultar-movil">Localidad <select id="f-localidad"><option value="">Todas</option></select></label>
-    <label class="ocultar-movil" id="l-turno" hidden>Turno <select id="f-turno"><option value="">Todos</option></select></label>
-    <label><input type="checkbox" id="f-novedades" checked> Solo con novedades</label>
-    <input type="search" id="f-buscar" placeholder="🔍 Buscar funcionario o despacho…" aria-label="Buscar">
+    <label class="ocultar-movil solo-cal">Fuero <select id="f-fuero"><option value="">Todos</option></select></label>
+    <label class="ocultar-movil solo-cal">Localidad <select id="f-localidad"><option value="">Todas</option></select></label>
+    <label class="ocultar-movil solo-cal" id="l-turno" hidden>Turno <select id="f-turno"><option value="">Todos</option></select></label>
+    <label class="solo-cal"><input type="checkbox" id="f-novedades" checked> Solo con novedades</label>
+    <input type="search" id="f-buscar" placeholder="🔍 Buscar titular, interino o despacho…" aria-label="Buscar">
     <span class="sep"></span>
+    <button class="btn ocultar-movil solo-tab" id="btn-imprimir">🖨 Imprimir</button>
     <button class="btn ocultar-movil" id="btn-ics">⇩ Exportar .ics</button>
   </div>
 
-  <div class="alertas" id="alertas" hidden></div>
+  <div class="alertas solo-cal" id="alertas" hidden></div>
   <main class="tablero" id="tablero"><div class="vacio">Cargando…</div></main>
-  <footer class="leyenda">
+  <footer class="leyenda solo-cal">
     <span class="l-lic">Licencia</span>
     <span class="l-int">Cubriendo un interinato</span>
     <span class="l-cub">✔ Cubierto por</span>

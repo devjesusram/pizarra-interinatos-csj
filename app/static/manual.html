@@ -52,7 +52,8 @@
       <p class="ayuda">Las capturas usan datos de ejemplo con nombres ficticios.</p>
       <ol class="indice">
         <li><a href="#ingresar">Ingresar y conocer la pantalla</a></li>
-        <li><a href="#leer">Leer la pizarra</a></li>
+        <li><a href="#tablero">El tablero de interinazgos</a></li>
+        <li><a href="#leer">Calendario: leer la pizarra por días</a></li>
         <li><a href="#licencia">Registrar una licencia</a></li>
         <li><a href="#interino">Asignar un interino</a></li>
         <li><a href="#vacantes">Puestos vacantes</a></li>
@@ -76,7 +77,7 @@
       </ol>
       <figure><img src="/static/manual/01-ingreso.png" alt="Pantalla de ingreso con usuario y contraseña" loading="lazy"><figcaption>Pantalla de ingreso.</figcaption></figure>
       <figure><img src="/static/manual/13-menu-usuario.png" alt="Menú del usuario" loading="lazy" style="max-width:340px"><figcaption>Menú 👤: administración (solo administradores), cambiar contraseña, este manual, salir y versión instalada.</figcaption></figure>
-      <p>La pantalla tiene cinco partes, de arriba hacia abajo:</p>
+      <p>Al ingresar se ve el <b>Tablero</b> de interinazgos (<a href="#tablero">sección 2</a>). Con las pestañas <b>🗂 Tablero</b> y <b>📅 Calendario</b> se pasa de uno a otro. En el Calendario, la pantalla tiene cinco partes, de arriba hacia abajo:</p>
       <table>
         <tr><th>Parte</th><th>Qué contiene</th></tr>
         <tr><td>Barra azul</td><td>Fechas visibles, botones ◀ ▶ y <b>Hoy</b>, cantidad de semanas, <b>Modo TV</b> y el menú <b>👤</b> (versión instalada, manual, administración, contraseña, salir)</td></tr>
@@ -85,11 +86,54 @@
         <tr><td>Pizarra</td><td>Una fila por funcionario y una columna por día</td></tr>
         <tr><td>Leyenda</td><td>Qué significa cada color</td></tr>
       </table>
-      <figure><img src="/static/manual/02-pantalla-principal.png" alt="Pantalla principal" loading="lazy"><figcaption>Pantalla principal en vista por cargo, con las alertas desplegadas.</figcaption></figure>
+      <figure><img src="/static/manual/02-pantalla-principal.png" alt="Pantalla principal" loading="lazy"><figcaption>Pestaña Calendario (vista por cargo), con las alertas desplegadas.</figcaption></figure>
+    </section>
+
+    <section class="hoja" id="tablero">
+      <h2>2. El tablero de interinazgos (pantalla principal)</h2>
+      <p>Al ingresar se ve el <b>Tablero</b>: la misma pizarra acrílica, en digital. Arriba dice <b>INTERINAZGOS JUZGADOS 2026</b> y hay un recuadro por cada interinazgo, agrupado por cargo (jueces, actuarios, secretarios, ujieres), con los cinco datos de siempre:</p>
+      <table>
+        <tr><th>Campo</th><th>Qué se anota</th></tr>
+        <tr><td>TITULAR</td><td>El titular natural del juzgado (o un puesto vacante)</td></tr>
+        <tr><td>INTERINO</td><td>Quien lo cubre (siempre del mismo cargo)</td></tr>
+        <tr><td>FECHA</td><td>Inicio del interinazgo</td></tr>
+        <tr><td>DESPACHO</td><td>Texto libre de referencia. Se propone el despacho del titular y se puede escribir otro</td></tr>
+        <tr><td>DESVINCULAR</td><td>Fecha en que se desvincula al interino (último día). <b>Puede quedar en blanco</b> si todavía no se sabe</td></tr>
+      </table>
+      <figure><img src="/static/manual/20-tablero.png" alt="Tablero de interinazgos con recuadros" loading="lazy"><figcaption>Tablero: cada recuadro muestra su estado arriba y los cinco campos de la pizarra.</figcaption></figure>
+      <h3>Anotar un interinazgo</h3>
+      <ol>
+        <li>Pulse <b>+ Interinazgo</b> (o tecla <b>I</b>), o el recuadro punteado <b>+ Nuevo interinazgo</b>.</li>
+        <li>Elija el <b>Titular</b> y la <b>Fecha</b> de inicio.</li>
+        <li>Si ya se sabe, cargue <b>Desvincular</b>; si no, déjelo vacío: el recuadro queda vigente hasta que la complete.</li>
+        <li>Revise el <b>Despacho</b> (viene propuesto) o escríbalo como lo anotaban en la pizarra.</li>
+        <li>Elija al <b>Interino</b> en la lista y pulse <b>Asignar</b>.</li>
+      </ol>
+      <figure><img src="/static/manual/21-nuevo-interinazgo.png" alt="Formulario Nuevo interinazgo" loading="lazy"><figcaption>Nuevo interinazgo: Desvincular puede quedar en blanco; Despacho es texto libre.</figcaption></figure>
+      <h3>Qué indica cada recuadro</h3>
+      <table>
+        <tr><th>Estado (arriba del recuadro)</th><th>Color</th><th>Significa</th></tr>
+        <tr><td>Vigente / Vigente · sin fecha de desvinculación</td><td>Verde</td><td>El interino está cubriendo</td></tr>
+        <tr><td>⚠ Se desvincula hoy / mañana / en N días</td><td>Ámbar</td><td>Faltan 3 días o menos para desvincular: aparecen primero</td></tr>
+        <tr><td>Empieza en N días</td><td>Azul</td><td>Anotado para una fecha futura</td></tr>
+        <tr><td>⚡ En conflicto</td><td>Violeta</td><td>El interino recibió una licencia en esas fechas: hay que cambiarlo</td></tr>
+        <tr><td>Desvinculado el …</td><td>Gris punteado</td><td>Ya terminó. Se ve eligiendo «Mostrar: Desvinculados»</td></tr>
+      </table>
+      <h3>Desvincular</h3>
+      <p>Haga clic en el recuadro: se abre el detalle. <b>Desvincular hoy</b> anota hoy como fecha de desvinculación (al día siguiente el recuadro pasa a «Desvinculados»). Con <b>Editar</b> puede poner otra fecha. Nada se borra: el historial queda guardado.</p>
+      <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular hoy" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar y Desvincular hoy.</figcaption></figure>
+      <h3>Moverse y filtrar</h3>
+      <ul>
+        <li><b>◀ ▶</b> cambian de año y <b>Hoy</b> vuelve al año actual. Un interinazgo sin fecha de desvinculación aparece también en los años siguientes.</li>
+        <li><b>Mostrar</b>: vigentes y por empezar (lo habitual), desvinculados o todos los del año.</li>
+        <li><b>Cargo</b> y el <b>buscador</b> (titular, interino o despacho) reducen lo que se ve.</li>
+        <li><b>🖨 Imprimir</b> imprime el tablero o lo guarda como PDF.</li>
+        <li>La pestaña <b>📅 Calendario</b> muestra lo mismo día por día, junto con licencias, alertas y puestos vacantes (secciones siguientes).</li>
+      </ul>
     </section>
 
     <section class="hoja" id="leer">
-      <h2>2. Leer la pizarra</h2>
+      <h2>3. Calendario: leer la pizarra por días</h2>
       <p>Cada fila es un funcionario (o un puesto vacante) y cada barra de color es una novedad en esos días. Al hacer clic en una barra se abre su detalle.</p>
       <table>
         <tr><th>Color</th><th>Significa</th><th>Al hacer clic</th></tr>
@@ -116,7 +160,7 @@
     </section>
 
     <section class="hoja" id="licencia">
-      <h2>3. Registrar una licencia</h2>
+      <h2>4. Registrar una licencia</h2>
       <p>Las licencias llegan por correo: del Consejo de Administración para jueces y de RRHH para actuarios, secretarios y ujieres. Se cargan así:</p>
       <ol>
         <li>Haga clic en <b>+ Licencia</b> (o tecla <b>L</b>). Atajo: haga clic o arrastre sobre los días de la fila del funcionario y el formulario se abre con el nombre y las fechas cargados.</li>
@@ -128,11 +172,11 @@
         <li>Pulse <b>Guardar</b>, o <b>Guardar y asignar interino ▸</b> para pasar directo al paso siguiente con las fechas ya cargadas.</li>
       </ol>
       <figure><img src="/static/manual/04-nueva-licencia.png" alt="Formulario Nueva licencia" loading="lazy"><figcaption>Formulario de nueva licencia. Abajo, el recuadro «Impacto en la pizarra».</figcaption></figure>
-      <p>Si la persona ya tiene otra licencia en esas fechas, el sistema no deja guardar y muestra cuál es. Si la persona estaba cubriendo a alguien, la licencia se guarda igual (es un hecho oficial) y ese interinato queda <b>en conflicto</b> para que lo reasigne (ver <a href="#alertas">sección 7</a>).</p>
+      <p>Si la persona ya tiene otra licencia en esas fechas, el sistema no deja guardar y muestra cuál es. Si la persona estaba cubriendo a alguien, la licencia se guarda igual (es un hecho oficial) y ese interinato queda <b>en conflicto</b> para que lo reasigne (ver <a href="#alertas">sección 8</a>).</p>
     </section>
 
     <section class="hoja" id="interino">
-      <h2>4. Asignar un interino a una persona ausente</h2>
+      <h2>5. Asignar un interino a una persona ausente</h2>
       <p>La forma más rápida es hacer clic en la barra ámbar <b>“⚠ SIN CUBRIR”</b> o en el botón <b>Asignar interino</b> de las alertas: el formulario se abre con el titular y las fechas cargados.</p>
       <ol>
         <li>Haga clic en <b>+ Interinato</b> (o tecla <b>I</b>).</li>
@@ -154,11 +198,11 @@
     </section>
 
     <section class="hoja" id="vacantes">
-      <h2>5. Puestos vacantes</h2>
+      <h2>6. Puestos vacantes</h2>
       <p>Un puesto vacante es un cargo sin titular, por ejemplo la Secretaría Nº 2 de un juzgado sin actuaria designada. Quien queda a cargo se asigna como un interinato, pero eligiendo el puesto en lugar de una persona.</p>
       <p>Ejemplo: la actuaria de la Secretaría Nº 1 del Juzgado Penal de Garantías 1º Turno también está a cargo de la Secretaría Nº 2, que no tiene titular.</p>
       <ol>
-        <li>Un administrador carga el puesto en <b>Administración → Vacantes</b> (ver <a href="#admin">sección 10</a>). En la pizarra aparece una fila <b>“⚪ Puesto vacante”</b>.</li>
+        <li>Un administrador carga el puesto en <b>Administración → Vacantes</b> (ver <a href="#admin">sección 11</a>). En la pizarra aparece una fila <b>“⚪ Puesto vacante”</b>.</li>
         <li>Haga clic en <b>+ Interinato</b>, o en la barra ámbar <b>“⚠ SIN NADIE A CARGO”</b> de esa fila.</li>
         <li>En <b>Cubre a</b>, marque <b>Un puesto vacante</b> y elija el puesto (cargo, Secretaría y despacho).</li>
         <li>Cargue las fechas, elija a la persona a cargo y pulse <b>Asignar</b>.</li>
@@ -170,7 +214,7 @@
     </section>
 
     <section class="hoja" id="avisos">
-      <h2>6. Avisos y bloqueos</h2>
+      <h2>7. Avisos y bloqueos</h2>
       <p>Antes de guardar, el sistema revisa que no haya cruces. Hay tres tipos de mensaje:</p>
       <ul>
         <li><b>⛔ Bloqueo</b>: no se guarda. Hay que cambiar a la persona o las fechas.</li>
@@ -196,13 +240,13 @@
     </section>
 
     <section class="hoja" id="alertas">
-      <h2>7. Alertas</h2>
+      <h2>8. Alertas</h2>
       <p>La franja amarilla arriba de la pizarra lista lo que necesita atención en los próximos 60 días. Revísela al empezar el día; cada alerta tiene su botón para resolverla.</p>
       <figure><img src="/static/manual/03-alertas.png" alt="Franja de alertas" loading="lazy"><figcaption>Franja de alertas: cada línea tiene su botón para resolverla.</figcaption></figure>
       <table>
         <tr><th>Alerta</th><th>Qué pasó</th><th>Cómo resolverla</th></tr>
-        <tr><td>Ausente sin interino</td><td>Alguien está de licencia y hay días hábiles sin nadie que lo cubra</td><td><b>Asignar interino</b> (<a href="#interino">sección 4</a>)</td></tr>
-        <tr><td>Puesto vacante sin nadie a cargo</td><td>Un puesto vacante tiene días hábiles sin nadie asignado</td><td><b>Asignar a cargo</b> (<a href="#vacantes">sección 5</a>)</td></tr>
+        <tr><td>Ausente sin interino</td><td>Alguien está de licencia y hay días hábiles sin nadie que lo cubra</td><td><b>Asignar interino</b> (<a href="#interino">sección 5</a>)</td></tr>
+        <tr><td>Puesto vacante sin nadie a cargo</td><td>Un puesto vacante tiene días hábiles sin nadie asignado</td><td><b>Asignar a cargo</b> (<a href="#vacantes">sección 6</a>)</td></tr>
         <tr><td>⚡ Interinato en conflicto</td><td>Quien cubre recibió una licencia que se cruza con el interinato</td><td><b>Resolver</b> → <b>Editar</b> para cambiar de interino o de fechas, o <b>Anular</b> si ya no corresponde</td></tr>
       </table>
       <figure><img src="/static/manual/11-conflicto.png" alt="Detalle de un interinato en conflicto" loading="lazy" style="max-width:720px"><figcaption>Interinato en conflicto: use «Editar» para cambiar de interino o «Anular».</figcaption></figure>
@@ -210,7 +254,7 @@
     </section>
 
     <section class="hoja" id="editar">
-      <h2>8. Editar o anular</h2>
+      <h2>9. Editar o anular</h2>
       <p>Nada se borra: los registros se <b>anulan</b> y quedan en la auditoría con el motivo.</p>
       <ol>
         <li>Haga clic en la barra de la licencia (roja) o del interinato (azul o verde).</li>
@@ -233,7 +277,7 @@
     </section>
 
     <section class="hoja" id="calendario">
-      <h2>9. Calendario (.ics) y Modo TV</h2>
+      <h2>10. Calendario (.ics) y Modo TV</h2>
       <p><b>Exportar a calendario:</b> las licencias e interinatos se pueden llevar a Google Calendar, Outlook o el calendario del teléfono.</p>
       <ol>
         <li>Haga clic en <b>⇩ Exportar .ics</b>.</li>
@@ -247,7 +291,7 @@
     </section>
 
     <section class="hoja" id="admin">
-      <h2>10. Administración (solo administradores)</h2>
+      <h2>11. Administración (solo administradores)</h2>
       <p>Se abre en <b>👤 → ⚙ Administración</b>. Los operadores no ven este menú: cargan licencias e interinatos, pero no cambian personal, despachos, límites ni usuarios.</p>
       <table>
         <tr><th>Pestaña</th><th>Para qué sirve</th></tr>
@@ -289,7 +333,7 @@
     </section>
 
     <section class="hoja" id="preguntas">
-      <h2>11. Preguntas frecuentes</h2>
+      <h2>12. Preguntas frecuentes</h2>
       <table>
         <tr><th>Pregunta</th><th>Respuesta</th></tr>
         <tr><td>Olvidé mi contraseña</td><td>Pídale a un administrador que le ponga una nueva (Administración → Usuarios → Editar) y cámbiela al entrar</td></tr>

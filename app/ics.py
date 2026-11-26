@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from icalendar import Calendar, Event
 
-from .db import a_fecha, iso, todos
+from .db import SIN_FIN, a_fecha, iso, todos
 
 SQL_LICENCIAS = """
   SELECT l.id, l.fecha_inicio, l.fecha_fin, l.estado, l.version, l.nro_resolucion,
@@ -37,7 +37,12 @@ def _evento(uid, resumen, ini, fin, anulado: bool, version: int, descripcion: st
     e.add("uid", uid)
     e.add("summary", resumen)
     e.add("dtstart", a_fecha(ini))                       # date -> evento de día completo
-    e.add("dtend", a_fecha(fin) + timedelta(days=1))     # DTEND es EXCLUSIVO en iCalendar
+    if iso(fin) == SIN_FIN:                              # sin fecha de desvinculación: se marca el día de inicio
+        e.add("dtend", a_fecha(ini) + timedelta(days=1))
+        del e["summary"]
+        e.add("summary", resumen + " (sin fecha de desvinculación)")
+    else:
+        e.add("dtend", a_fecha(fin) + timedelta(days=1))     # DTEND es EXCLUSIVO en iCalendar
     e.add("dtstamp", datetime.now(timezone.utc))
     e.add("sequence", version)
     e.add("status", "CANCELLED" if anulado else "CONFIRMED")

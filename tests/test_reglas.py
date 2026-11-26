@@ -385,3 +385,40 @@ def test_licencia_de_quien_cubre_vacante_marca_conflicto(conn, datos):
     _, avisos = lic(conn, datos, "actuario1", 3, 4)
     assert [a.regla for a in avisos] == ["L2"] and "puesto vacante" in avisos[0].mensaje
     assert conn.execute("SELECT estado FROM interinatos WHERE id = ?", (iid,)).fetchone()["estado"] == "EN_CONFLICTO"
+
+
+# ── Tablero: DESVINCULAR en blanco y DESPACHO como texto ──
+
+def test_interinazgo_sin_fecha_de_desvinculacion(conn, datos):
+    lic(conn, datos, "juez1", 0, 9)
+    iid, _ = servicios.crear_interinato(conn, {"titular_id": datos["juez1"], "interino_id": datos["juez2"],
+                                               "fecha_inicio": d(0), "fecha_fin": None,
+                                               "despacho_texto": "Penal Gtías. 1º Turno"}, datos["uid"])
+    r = conn.execute("SELECT fecha_fin, despacho_texto FROM interinatos WHERE id = ?", (iid,)).fetchone()
+    assert r == {"fecha_fin": "9999-12-31", "despacho_texto": "Penal Gtías. 1º Turno"}
+    # Sigue vigente: otro interino para el mismo titular, meses después, se bloquea
+    with pytest.raises(Bloqueado) as e:
+        inter(conn, datos, "juez1", "juez3", 200, 205)
+    assert reglas(e) == {"R6"} and "(sin fecha de desvinculación)" in e.value.hallazgos[0].mensaje
+    # Desvincular: se carga la fecha y queda libre después
+    servicios.editar_interinato(conn, iid, {"titular_id": datos["juez1"], "interino_id": datos["juez2"],
+                                            "fecha_inicio": d(0), "fecha_fin": d(9)}, 1, datos["uid"])
+    inter(conn, datos, "juez1", "juez3", 200, 205)
+
+
+def test_sin_fecha_respeta_limite_de_ujier_y_no_se_cuelga(conn, datos):
+    inter(conn, datos, "ujier1", "ujier3", 0, 4)
+    servicios.crear_interinato(conn, {"titular_id": datos["ujier2"], "interino_id": datos["ujier3"],
+                                      "fecha_inicio": d(10), "fecha_fin": None}, datos["uid"], confirmar_advertencias=True)
+    with pytest.raises(Bloqueado) as e:      # el ujier ya cubre "para siempre" desde d(10)
+        servicios.crear_interinato(conn, {"titular_id": datos["ujier1"], "interino_id": datos["ujier3"],
+                                          "fecha_inicio": d(400), "fecha_fin": d(401)}, datos["uid"], confirmar_advertencias=True)
+    assert reglas(e) == {"R5"}
+    assert servicios.excesos_de_tope(conn, "JUEZ", 1, d(0)) == []
+
+
+def test_sin_fecha_avisa_si_el_titular_no_tiene_licencia_al_inicio(conn, datos):
+    with pytest.raises(RequiereConfirmacion) as e:
+        servicios.crear_interinato(conn, {"titular_id": datos["juez1"], "interino_id": datos["juez2"],
+                                          "fecha_inicio": d(0), "fecha_fin": None}, datos["uid"])
+    assert "al comienzo del interinazgo" in e.value.hallazgos[0].mensaje

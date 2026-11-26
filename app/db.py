@@ -71,6 +71,11 @@ def iso(d) -> str | None:
     return str(d)
 
 
+# Un interinazgo sin fecha de desvinculación se guarda con esta fecha de fin: así las
+# reglas de cruce (inicio <= fin) siguen funcionando sin casos especiales.
+SIN_FIN = "9999-12-31"
+
+
 def a_fecha(s) -> date:
     return s if isinstance(s, date) else date.fromisoformat(s)
 
@@ -252,6 +257,9 @@ MIGRACIONES = [
                         WHERE i.id <> NEW.id AND i.interino_id = NEW.interino_id AND i.estado <> 'ANULADO'
                           AND i.fecha_inicio <= NEW.fecha_fin AND i.fecha_fin >= NEW.fecha_inicio);
         END;
+    """),
+    (4, "Despacho como texto de referencia en cada interinazgo (tablero)", """
+        ALTER TABLE interinatos ADD COLUMN despacho_texto TEXT;
     """),
 ]
 VERSION_ACTUAL = MIGRACIONES[-1][0]

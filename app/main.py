@@ -90,13 +90,15 @@ class InterinatoIn(BaseModel):
     interino_id: int
     licencia_id: Optional[int] = None
     fecha_inicio: date
-    fecha_fin: date
+    fecha_fin: Optional[date] = None        # DESVINCULAR: en blanco = sin fecha todavía
+    despacho_texto: Optional[str] = None    # DESPACHO: texto libre de referencia
     acto_designacion: Optional[str] = None
     observaciones: Optional[str] = None
     confirmar_advertencias: bool = False
     version: Optional[int] = None
 
-    _limpiar = field_validator("acto_designacion", "observaciones", mode="before")(_vacio_a_none)
+    _limpiar = field_validator("acto_designacion", "observaciones", "despacho_texto", "fecha_fin",
+                               mode="before")(_vacio_a_none)
 
 
 class AnularIn(BaseModel):
@@ -503,17 +505,17 @@ def ver_auditoria(limite: int = Query(200, le=1000), u=Depends(requiere_admin)):
 
 # ── Pizarra ────────────────────────────────────────────────────────────
 
-def _rango(desde: date, hasta: date):
+def _rango(desde: date, hasta: date, maximo: bool = True):
     if hasta < desde:
         raise HTTPException(400, "Rango de fechas inválido.")
-    if (hasta - desde).days > 400:
+    if maximo and (hasta - desde).days > 400:
         raise HTTPException(400, "El rango máximo es de 400 días.")
 
 
 # Interinatos con la descripción de lo que cubren: una persona o un puesto vacante
 SQL_INTERINATOS_PIZARRA = """
     SELECT i.id, i.titular_id, i.vacante_id, i.interino_id, i.licencia_id, i.fecha_inicio, i.fecha_fin,
-           i.estado, i.version, x.nombre_completo AS interino,
+           i.estado, i.version, i.despacho_texto, i.cargo_codigo, x.nombre_completo AS interino,
            coalesce(t.nombre_completo,
                     'Puesto vacante' || CASE WHEN v.secretaria IS NOT NULL THEN ' (Sria. ' || v.secretaria || ')' ELSE '' END)
              AS titular,
@@ -546,6 +548,20 @@ def pizarra(desde: date, hasta: date, u=Depends(usuario_actual)):
             "licencias": licencias, "interinatos": interinatos, "vacantes": vacantes, "inhabiles": inhabiles}
 
 
+@app.get("/api/tablero")
+def tablero(anio: int = Query(ge=2000, le=2100), u=Depends(usuario_actual)):
+    """Recuadros de la pizarra: interinazgos (no anulados) que tocan el año pedido."""
+    with db.conexion() as conn:
+        filas = todos(conn, SQL_INTERINATOS_PIZARRA.replace(
+            "dt.nombre AS despacho_titular",
+            "dt.nombre AS despacho_titular, c.nombre AS cargo, c.orden_pizarra, dx.nombre AS despacho_interino")
+            + """ JOIN cargos c ON c.codigo = i.cargo_codigo JOIN despachos dx ON dx.id = x.despacho_id
+            WHERE i.estado <> 'ANULADO' AND i.fecha_inicio <= :fin_anio AND i.fecha_fin >= :ini_anio
+            ORDER BY c.orden_pizarra, i.fecha_inicio""",
+            {"ini_anio": f"{anio}-01-01", "fin_anio": f"{anio}-12-31"})
+    return {"anio": anio, "hoy": hoy(), "interinatos": filas}
+
+
 @app.get("/api/alertas")
 def ver_alertas(u=Depends(usuario_actual)):
     with db.conexion() as conn:
@@ -558,7 +574,7 @@ def disponibilidad(desde: date, hasta: date, titular_id: Optional[int] = None,
                    u=Depends(usuario_actual)):
     """Candidatos del mismo cargo, con su estado según las mismas reglas que al guardar.
     Se consulta para una persona ausente (titular_id) o para un puesto vacante (vacante_id)."""
-    _rango(desde, hasta)
+    _rango(desde, hasta, maximo=False)      # "hasta" puede ser 9999-12-31: sin fecha de desvinculación
     if (titular_id is None) == (vacante_id is None):
         raise HTTPException(400, "Indique titular_id o vacante_id.")
     with db.conexion() as conn:
