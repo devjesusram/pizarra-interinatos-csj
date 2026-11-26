@@ -155,23 +155,107 @@ async function iniciar() {
   conectarEventos();
   aplicarModo();
   await recargar();
+  iniciarAutoActualizacion();
+}
+
+// ── Carga de datos y actualización automática ─────────────────────────
+const AUTO_SEG = 15;   // cada cuántos segundos se buscan cambios hechos por otros usuarios
+
+/** Identifica lo que se está mirando, para descartar respuestas de una vista anterior. */
+const claveVista = () => (E.modo === "tablero" ? `t${E.anio}` : `c${E.desde}/${E.largo}`);
+
+async function traerDatos() {
+  if (E.modo === "tablero") {
+    const desde = lunesDe(E.hoy || aIso(new Date()));
+    const [tablero, datos] = await Promise.all([
+      api("GET", `/api/tablero?anio=${E.anio}`),
+      api("GET", `/api/pizarra?desde=${desde}&hasta=${sumar(desde, 13)}`),   // personal y licencias para los formularios
+    ]);
+    return { tablero, datos, hoy: tablero.hoy };
+  }
+  const hasta = sumar(E.desde, E.largo - 1);
+  const [datos, alertas] = await Promise.all([
+    api("GET", `/api/pizarra?desde=${E.desde}&hasta=${hasta}`),
+    api("GET", "/api/alertas"),
+  ]);
+  return { datos, alertas, hoy: datos.hoy };
+}
+
+function aplicarDatos(r) {
+  E.datos = r.datos;
+  E.hoy = r.hoy;
+  if (r.tablero) E.tablero = r.tablero;
+  if (r.alertas) E.alertas = r.alertas;
+  E.firma = JSON.stringify(r);
+}
+
+function dibujarTodo() {
+  if (E.modo === "tablero") dibujarTablero();
+  else { dibujarAlertas(); dibujarPizarra(); }
+}
+
+function pintarRango() {
+  $("#rango").textContent = E.modo === "tablero" ? `Año ${E.anio}` : `${fmtCorto(E.desde)} – ${fmt(sumar(E.desde, E.largo - 1))}`;
 }
 
 async function recargar() {
-  if (E.modo === "tablero") return recargarTablero();
-  const hasta = sumar(E.desde, E.largo - 1);
-  $("#rango").textContent = `${fmtCorto(E.desde)} – ${fmt(hasta)}`;
+  pintarRango();
+  const clave = claveVista();
   try {
-    const [datos, alertas] = await Promise.all([
-      api("GET", `/api/pizarra?desde=${E.desde}&hasta=${hasta}`),
-      api("GET", "/api/alertas"),
-    ]);
-    E.datos = datos;
-    E.alertas = alertas;
-    E.hoy = datos.hoy;
-    dibujarAlertas();
-    dibujarPizarra();
+    const r = await traerDatos();
+    if (clave !== claveVista()) return;   // el usuario ya pasó a otra semana o año
+    aplicarDatos(r);
+    marcarActualizado(true);
+    dibujarTodo();
   } catch (e) { mostrarError(e); }
+}
+
+/** Indicador «Actualizado hace…» de la barra superior. */
+function marcarActualizado(ok) {
+  if (ok === true) { E.actualizado = Date.now(); E.sinConexion = false; } else if (ok === false) E.sinConexion = true;
+  const el = $("#actualizado");
+  if (!el || !E.actualizado) return;
+  const s = Math.round((Date.now() - E.actualizado) / 1000);
+  const hace = s < 5 ? "recién" : s < 60 ? `hace ${s} s` : `hace ${Math.floor(s / 60)} min`;
+  el.classList.toggle("sin-conexion", !!E.sinConexion);
+  el.textContent = E.sinConexion ? "⚠ Sin conexión con el servidor" : `● Actualizado ${hace}`;
+  el.title = E.sinConexion
+    ? "No se pudo consultar al servidor. Se vuelve a intentar sola cada " + AUTO_SEG + " segundos."
+    : "Los cambios de los demás usuarios aparecen solos cada " + AUTO_SEG + " segundos.";
+}
+
+const hayVentanaAbierta = () => $("#modal").open || $("#modal2").open || !$("#menu-usuario").hidden;
+
+/** Busca cambios hechos por otros usuarios y redibuja solo si los hay. No interrumpe:
+    si hay una ventana o el menú abiertos, espera a que se cierren. */
+async function actualizarAuto() {
+  const tv = !$("#tv").hidden;
+  if (document.hidden || E.autoEnCurso || (!tv && hayVentanaAbierta())) return;
+  const clave = claveVista();
+  E.autoEnCurso = true;
+  try {
+    const r = await traerDatos();
+    if (clave !== claveVista()) return;
+    marcarActualizado(true);
+    if (JSON.stringify(r) === E.firma) return;            // nada cambió
+    if (!tv && hayVentanaAbierta()) return;               // se abrió una ventana mientras se consultaba
+    aplicarDatos(r);
+    if (tv) { modoTV.pintar?.(); return; }
+    const tab = $("#tablero"), arriba = tab.scrollTop, izq = tab.scrollLeft;
+    dibujarTodo();
+    tab.scrollTop = arriba; tab.scrollLeft = izq;
+  } catch {
+    marcarActualizado(false);
+  } finally { E.autoEnCurso = false; }
+}
+
+function iniciarAutoActualizacion() {
+  setInterval(actualizarAuto, AUTO_SEG * 1000);
+  setInterval(() => marcarActualizado(), 5000);   // solo refresca el texto «hace N s»
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) actualizarAuto(); });
+  window.addEventListener("focus", () => actualizarAuto());
+  // al cerrar una ventana, ponerse al día enseguida
+  ["#modal", "#modal2"].forEach((s) => $(s).addEventListener("close", () => setTimeout(actualizarAuto, 300)));
 }
 
 // ── Tablero: la pizarra acrílica de interinazgos, en recuadros ───────────
@@ -194,22 +278,6 @@ function estadoRecuadro(i, hoy) {
   const n = dias(i.fecha_fin);
   if (n <= 3) return { clase: "por-vencer", texto: n === 0 ? "⚠ Se desvincula HOY" : n === 1 ? "⚠ Se desvincula mañana" : `⚠ Se desvincula en ${n} días` };
   return { clase: "vigente", texto: "Vigente" };
-}
-
-async function recargarTablero() {
-  $("#rango").textContent = `Año ${E.anio}`;
-  const hoyIso = E.hoy || aIso(new Date());
-  const desde = lunesDe(hoyIso);
-  try {
-    const [t, datos] = await Promise.all([
-      api("GET", `/api/tablero?anio=${E.anio}`),
-      api("GET", `/api/pizarra?desde=${desde}&hasta=${sumar(desde, 13)}`),   // personal y licencias para los formularios
-    ]);
-    E.tablero = t;
-    E.datos = datos;
-    E.hoy = t.hoy;
-    dibujarTablero();
-  } catch (e) { mostrarError(e); }
 }
 
 function dibujarTablero() {
@@ -1399,12 +1467,11 @@ function modoTV() {
           ${x.cub ? `<span class="ok">✔ Cubre: ${esc(x.cub.interino)}</span>` : `<span class="mal">⚠ SIN INTERINO</span>`}</div>`).join("") : `<div class="item" style="opacity:.6">Sin ausencias</div>`}</div>`).join("")}</div>`;
     $("#tv-salir").onclick = salir;
   };
-  const salir = () => { tv.hidden = true; clearInterval(modoTV._t); document.exitFullscreen?.().catch(() => {}); };
+  const salir = () => { tv.hidden = true; document.exitFullscreen?.().catch(() => {}); };
   modoTV.salir = salir;
+  modoTV.pintar = pintar;   // la actualización automática la repinta cada pocos segundos
   E.desde = lunesDe(E.hoy);
   recargar().then(() => { pintar(); tv.hidden = false; tv.requestFullscreen?.().catch(() => {}); });
-  clearInterval(modoTV._t);
-  modoTV._t = setInterval(() => recargar().then(pintar), 5 * 60 * 1000);
 }
 
 // ── Eventos ───────────────────────────────────────────────────────────

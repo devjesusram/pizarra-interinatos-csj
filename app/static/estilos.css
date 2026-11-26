@@ -60,6 +60,8 @@ a { color: var(--primario); }
   cursor: pointer;
 }
 .barra select option { color: var(--texto); }
+.barra .actualizado { font-size: 12px; opacity: .85; white-space: nowrap; }
+.barra .actualizado.sin-conexion { opacity: 1; background: #fff3d6; color: #7a4a00; border-radius: var(--radio); padding: 2px 8px; font-weight: 600; }
 .barra button:hover { background: rgba(255, 255, 255, .26); }
 .usuario { position: relative; }
 .menu {

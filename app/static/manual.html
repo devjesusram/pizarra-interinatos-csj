@@ -80,7 +80,7 @@
       <p>Al ingresar se ve el <b>Tablero</b> de interinazgos (<a href="#tablero">sección 2</a>). Con las pestañas <b>🗂 Tablero</b> y <b>📅 Calendario</b> se pasa de uno a otro. En el Calendario, la pantalla tiene cinco partes, de arriba hacia abajo:</p>
       <table>
         <tr><th>Parte</th><th>Qué contiene</th></tr>
-        <tr><td>Barra azul</td><td>Fechas visibles, botones ◀ ▶ y <b>Hoy</b>, cantidad de semanas, <b>Modo TV</b> y el menú <b>👤</b> (versión instalada, manual, administración, contraseña, salir)</td></tr>
+        <tr><td>Barra azul</td><td>Fechas visibles, botones ◀ ▶ y <b>Hoy</b>, cantidad de semanas, <b>Modo TV</b>, el indicador <b>● Actualizado hace…</b> y el menú <b>👤</b> (versión instalada, manual, administración, contraseña, salir)</td></tr>
         <tr><td>Herramientas</td><td><b>+ Licencia</b>, <b>+ Interinato</b>, vista, filtros (cargo, fuero, localidad, turno), <b>Solo con novedades</b>, buscador y <b>Exportar .ics</b></td></tr>
         <tr><td>Alertas (franja amarilla)</td><td>Ausentes sin interino, puestos vacantes sin nadie a cargo e interinatos en conflicto, cada uno con su botón para resolverlo</td></tr>
         <tr><td>Pizarra</td><td>Una fila por funcionario y una columna por día</td></tr>
@@ -132,6 +132,14 @@
       <p>La fecha de <b>Desvincular</b> que se anota al crear el recuadro es la <b>prevista</b>: cuando llega, el recuadro se pone en ámbar y, si pasa sin que nadie lo confirme, en <b>rojo</b>. Para cambiar la fecha prevista (por ejemplo, una prórroga), use <b>Editar</b>.</p>
       <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar y Desvincular….</figcaption></figure>
       <figure><img src="/static/manual/24-desvincular.png" alt="Ventana Desvincular con fecha y observación" loading="lazy" style="max-width:640px"><figcaption>Desvincular: fecha y observación; queda registrado con su usuario.</figcaption></figure>
+      <h3>Actualización automática (varios usuarios a la vez)</h3>
+      <p>No hace falta pulsar <b>F5</b>. Cada <b>15 segundos</b> la Pizarra consulta al servidor y, si otro usuario desvinculó, anotó o cambió algo, el tablero y el calendario se redibujan solos. También se pone al día al volver a la pestaña o al cerrar una ventana.</p>
+      <ul>
+        <li>En la barra azul se lee <b>● Actualizado hace N s</b>.</li>
+        <li>Si tiene una ventana abierta (por ejemplo, un formulario a medio cargar), <b>no se la interrumpe</b>: la actualización espera a que la cierre.</li>
+        <li>Si aparece <b>⚠ Sin conexión con el servidor</b>, la PC perdió la red o el servidor está apagado. Se reintenta sola; lo que se ve puede no estar al día.</li>
+        <li>Si dos personas intentan cambiar el mismo recuadro, la segunda recibe el aviso <i>«El registro cambió»</i> y no se pisa nada.</li>
+      </ul>
       <h3>Moverse y filtrar</h3>
       <ul>
         <li><b>◀ ▶</b> cambian de año y <b>Hoy</b> vuelve al año actual. Un interinazgo sin fecha de desvinculación aparece también en los años siguientes.</li>
@@ -297,7 +305,7 @@
       </ol>
       <p>Al elegir un funcionario aparece además un <b>enlace de suscripción</b> que se actualiza solo. Funciona solo en equipos conectados a la red interna, y quien tenga el enlace ve las licencias e interinatos de esa persona: compártalo solo con ella.</p>
       <figure><img src="/static/manual/12-exportar-ics.png" alt="Exportar a calendario" loading="lazy" style="max-width:720px"><figcaption>Exportar a calendario, con el enlace de suscripción de un funcionario.</figcaption></figure>
-      <p><b>Modo TV:</b> el botón <b>Modo TV</b> abre una pantalla completa de solo lectura con quienes están de licencia hoy, agrupados por cargo, y quién los cubre (o “⚠ SIN INTERINO”). Sirve para dejarla en un monitor de la oficina; se actualiza sola cada 5 minutos. Para salir, pulse <b>Esc</b> o <b>Salir</b>.</p>
+      <p><b>Modo TV:</b> el botón <b>Modo TV</b> abre una pantalla completa de solo lectura con quienes están de licencia hoy, agrupados por cargo, y quién los cubre (o “⚠ SIN INTERINO”). Sirve para dejarla en un monitor de la oficina; se actualiza sola cada 15 segundos. Para salir, pulse <b>Esc</b> o <b>Salir</b>.</p>
       <figure><img src="/static/manual/17-modo-tv.png" alt="Modo TV" loading="lazy"><figcaption>Modo TV, para un monitor en la oficina.</figcaption></figure>
     </section>
 
