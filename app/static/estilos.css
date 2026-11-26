@@ -253,6 +253,9 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
   .recuadro { break-inside: avoid; box-shadow: none; } .r-nuevo { display: none; }
 }
 
+.creditos { text-align: center; font-size: 12px; color: var(--texto-suave); margin: 28px 0 0; line-height: 1.6; }
+.login .creditos { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--borde); }
+
 /* ── Modales ────────────────────────────────────────────── */
 dialog {
   border: 0; border-radius: 10px; padding: 0; box-shadow: var(--sombra);

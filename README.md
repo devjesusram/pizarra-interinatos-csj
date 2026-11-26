@@ -9,6 +9,9 @@ del personal judicial (Juez, Actuario/a, Secretario/a, Ujier) de la **Circunscri
 
 Es un proyecto **experimental e independiente**: tiene sus propios usuarios y no usa Active Directory.
 
+**Desarrollado por la Sección de Servicios Informáticos** de la Circunscripción Judicial de Cordillera, con la asistencia
+de **Claude** (inteligencia artificial de Anthropic).
+
 **Liviano:** corre en cualquier PC con Windows 10/11, sin internet, sin Docker y sin instalar Python. La base de
 datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y el resto entra desde el navegador.
 

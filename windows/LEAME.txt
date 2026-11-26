@@ -1,5 +1,7 @@
 PIZARRA DE INTERINATOS Y LICENCIAS - Version para Windows
 =========================================================
+Desarrollado por la Seccion de Servicios Informaticos - Circunscripcion
+Judicial de Cordillera, con la asistencia de Claude (IA de Anthropic).
 
 No necesita internet ni instalar nada. Todo esta en esta carpeta.
 

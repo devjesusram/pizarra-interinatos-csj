@@ -246,12 +246,26 @@ function dibujarTablero() {
       || `<div class="vacio">No hay interinazgos ${ver === "desvinculados" ? "desvinculados" : "vigentes"} para mostrar en ${t.anio}.<br>
           Use <b>+ Interinazgo</b> para anotar el primero.</div>`}
     <div class="recuadros"><div class="recuadro r-nuevo" id="r-nuevo" tabindex="0" role="button">+ Nuevo interinazgo</div></div>
+    <p class="creditos">Desarrollado por la <b>Sección de Servicios Informáticos</b> · Circunscripción Judicial de Cordillera · con la asistencia de <b>Claude</b> (IA de Anthropic)</p>
   </div>`;
   $$(".recuadro[data-int]", tab).forEach((el) => {
     el.onclick = () => verInterinato(+el.dataset.int);
     el.onkeydown = (ev) => { if (ev.key === "Enter") verInterinato(+el.dataset.int); };
   });
   $("#r-nuevo", tab).onclick = () => formInterinato();
+}
+
+/** Créditos del sistema. */
+function acercaDe() {
+  modal($("#modal"), { titulo: "Acerca de la Pizarra de Interinatos", cuerpo: `
+    <p style="font-size:16px;margin-top:0"><b>⚖ Pizarra de Interinatos</b> · Versión ${esc(E.yo.version)}</p>
+    <p>Reemplaza la pizarra acrílica de interinazgos de los juzgados: registra licencias e interinazgos, muestra quién cubre
+      a quién y avisa antes de que se cargue un error.</p>
+    <dl class="detalle">
+      <dt>Desarrollado por</dt><dd><b>Sección de Servicios Informáticos</b><br>${esc(E.yo.circunscripcion)}</dd>
+      <dt>Con la asistencia de</dt><dd><b>Claude</b>, inteligencia artificial de Anthropic</dd>
+      <dt>Funciona</dt><dd>En la red interna, sin internet. Los datos quedan en el servidor de la institución.</dd>
+    </dl>`, pie: [{ texto: "Cerrar", clase: "primario" }] });
 }
 
 function redibujar() {
@@ -1419,6 +1433,7 @@ function conectarEventos() {
   $("#m-admin").onclick = () => administrar();
   $("#m-clave").onclick = cambiarClave;
   $("#m-manual").onclick = () => window.open("/manual", "_blank", "noopener");
+  $("#m-acerca").onclick = acercaDe;
   $("#m-salir").onclick = async () => { await api("POST", "/api/logout").catch(() => {}); location.href = "/login"; };
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("#tv").hidden) { modoTV.salir(); return; }
