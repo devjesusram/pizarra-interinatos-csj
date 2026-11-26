@@ -5,7 +5,7 @@ guardado ocurren sin que otro operador pueda escribir en el medio.
 """
 import json
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from . import config
 from .db import SIN_FIN, a_fecha, ahora_utc, escritura, iso, todos, uno
@@ -230,16 +230,48 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
             # Si pasó la validación (R4), deja de estar en conflicto
             cur = conn.execute(f"""UPDATE interinatos SET {', '.join(c + ' = :' + c for c in CAMPOS_INTERINATO)},
                                           cargo_codigo = :cargo, estado = 'VIGENTE', version = version + 1,
+                                          desvinculado = CASE WHEN :fecha_fin > :hoy THEN 0 ELSE desvinculado END,
+                                          desvinculado_por = CASE WHEN :fecha_fin > :hoy THEN NULL ELSE desvinculado_por END,
+                                          desvinculado_en = CASE WHEN :fecha_fin > :hoy THEN NULL ELSE desvinculado_en END,
                                           modificado_por = :u, modificado_en = :ahora
                                    WHERE id = :id AND version = :v""",
                                {**datos, "cargo": _cargo_cubierto(conn, datos), "u": usuario_id,
-                                "id": int_id, "v": version, "ahora": ahora_utc()})
+                                "id": int_id, "v": version, "ahora": ahora_utc(),
+                                "hoy": iso(datetime.now(config.ZONA).date())})
         except sqlite3.IntegrityError as e:
             raise traducir_error_bd(e)
         if cur.rowcount == 0:
             raise ConflictoVersion(_quien_modifico(conn, "interinatos", int_id))
         auditar(conn, "interinatos", int_id, "MODIFICAR", datos, usuario_id, avisos + infos)
         return infos
+
+
+def desvincular_interinato(conn, int_id: int, fecha, observacion: str | None, version: int,
+                           usuario_id: int, hoy: date) -> None:
+    """Acción manual: da por terminado el interinazgo en 'fecha' y registra quién lo hizo."""
+    fecha = a_fecha(fecha)
+    with escritura(conn):
+        i = uno(conn, "SELECT fecha_inicio, estado FROM interinatos WHERE id = ?", (int_id,))
+        if not i:
+            raise LookupError("Interinazgo inexistente")
+        if i["estado"] == "ANULADO":
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "E1", "No se puede desvincular un interinazgo anulado.")])
+        if fecha > hoy:
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "D1", "La fecha de desvinculación no puede ser posterior a hoy. "
+                                                           "Para una fecha futura, use «Editar» y cargue «Desvincular».")])
+        if fecha < a_fecha(i["fecha_inicio"]):
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "D2", f"La fecha de desvinculación no puede ser anterior al inicio "
+                                                           f"del interinazgo ({f(i['fecha_inicio'])}).")])
+        cur = conn.execute("""UPDATE interinatos SET fecha_fin = ?, desvinculado = 1, desvinculado_por = ?,
+                                     desvinculado_en = ?, desvinculado_obs = ?, version = version + 1,
+                                     modificado_por = ?, modificado_en = ?
+                              WHERE id = ? AND version = ?""",
+                           (iso(fecha), usuario_id, ahora_utc(), (observacion or "").strip() or None,
+                            usuario_id, ahora_utc(), int_id, version))
+        if cur.rowcount == 0:
+            raise ConflictoVersion(_quien_modifico(conn, "interinatos", int_id))
+        auditar(conn, "interinatos", int_id, "DESVINCULAR",
+                {"fecha_desvinculacion": iso(fecha), "observacion": observacion}, usuario_id)
 
 
 def anular_interinato(conn, int_id: int, motivo: str, version: int, usuario_id: int) -> None:
@@ -331,7 +363,15 @@ def alertas(conn, hoy: date, horizonte: int = 60) -> dict:
             vacantes_sin_cubrir.append({**v, "primer_dia": iso(faltan[0]), "ultimo_dia": iso(faltan[-1]),
                                         "dias_sin_cubrir": len(faltan)})
     vacantes_sin_cubrir.sort(key=lambda x: (x["primer_dia"], x["orden_pizarra"]))
-    return {"sin_cubrir": sin_cubrir, "en_conflicto": en_conflicto, "vacantes_sin_cubrir": vacantes_sin_cubrir}
+    por_desvincular = todos(conn, """
+        SELECT i.id, i.fecha_inicio, i.fecha_fin, x.nombre_completo AS interino,
+               coalesce(t.nombre_completo, 'un puesto vacante') AS titular
+        FROM interinatos i JOIN personal x ON x.id = i.interino_id
+        LEFT JOIN personal t ON t.id = i.titular_id
+        WHERE i.estado <> 'ANULADO' AND i.desvinculado = 0 AND i.fecha_fin < ?
+        ORDER BY i.fecha_fin""", (iso(hoy),))
+    return {"sin_cubrir": sin_cubrir, "en_conflicto": en_conflicto, "vacantes_sin_cubrir": vacantes_sin_cubrir,
+            "por_desvincular": por_desvincular}
 
 
 # ── Puestos vacantes ───────────────────────────────────────────────────

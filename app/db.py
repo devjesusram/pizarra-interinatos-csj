@@ -261,6 +261,18 @@ MIGRACIONES = [
     (4, "Despacho como texto de referencia en cada interinazgo (tablero)", """
         ALTER TABLE interinatos ADD COLUMN despacho_texto TEXT;
     """),
+    (5, "Desvinculación manual registrada (quién y cuándo)", """
+        ALTER TABLE interinatos ADD COLUMN desvinculado INTEGER NOT NULL DEFAULT 0 CHECK (desvinculado IN (0, 1));
+        ALTER TABLE interinatos ADD COLUMN desvinculado_por INTEGER REFERENCES usuarios(id);
+        ALTER TABLE interinatos ADD COLUMN desvinculado_en TEXT;
+        ALTER TABLE interinatos ADD COLUMN desvinculado_obs TEXT;
+        -- Los interinazgos que ya habían terminado antes de esta versión se dan por desvinculados
+        -- ("registro anterior": sin usuario), para no aparecer todos como pendientes.
+        UPDATE interinatos SET desvinculado = 1,
+               desvinculado_en = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+               desvinculado_obs = 'Registro anterior a la desvinculación manual'
+         WHERE fecha_fin < date('now', '-4 hours') AND estado <> 'ANULADO';
+    """),
 ]
 VERSION_ACTUAL = MIGRACIONES[-1][0]
 

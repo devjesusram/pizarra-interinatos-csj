@@ -180,8 +180,12 @@ const PLURAL = { JUEZ: "Jueces", ACTUARIO: "Actuarios/as Judiciales", SECRETARIO
 
 function estadoRecuadro(i, hoy) {
   const dias = (iso) => difDias(hoy, iso);
+  if (i.desvinculado) {
+    const quien = i.desvinculado_por_nombre ? ` por ${i.desvinculado_por_nombre}` : " (registro anterior)";
+    return { clase: "vencido", texto: `✔ Desvinculado el ${fmt(i.fecha_fin)}${quien}` };
+  }
   if (i.estado === "EN_CONFLICTO") return { clase: "conflicto", texto: "⚡ En conflicto: el interino tiene licencia" };
-  if (i.fecha_fin !== SIN_FIN && i.fecha_fin < hoy) return { clase: "vencido", texto: `Desvinculado el ${fmt(i.fecha_fin)}` };
+  if (i.fecha_fin !== SIN_FIN && i.fecha_fin < hoy) return { clase: "pendiente", texto: `⚠ Falta desvincular (venció el ${fmt(i.fecha_fin)})` };
   if (i.fecha_inicio > hoy) {
     const n = dias(i.fecha_inicio);
     return { clase: "proximo", texto: n === 1 ? "Empieza mañana" : `Empieza en ${n} días` };
@@ -220,7 +224,7 @@ function dibujarTablero() {
     const texto = `${i.titular} ${i.interino} ${i.despacho_texto || ""} ${i.despacho_titular}`.toLowerCase();
     return !q || texto.includes(q);
   });
-  const orden = { "por-vencer": 0, conflicto: 1, vigente: 2, proximo: 3, vencido: 4 };
+  const orden = { pendiente: 0, "por-vencer": 1, conflicto: 2, vigente: 3, proximo: 4, vencido: 5 };
   const grupos = E.cat.cargos.map((c) => ({ c, xs: filas.filter((f) => f.i.cargo_codigo === c.codigo)
     .sort((a, b) => orden[a.e.clase] - orden[b.e.clase] || (a.i.fecha_inicio < b.i.fecha_inicio ? -1 : 1)) }))
     .filter((g) => g.xs.length);
@@ -236,7 +240,7 @@ function dibujarTablero() {
       </dl></div>`;
   tab.innerHTML = `<div class="pizarra-acrilica">
     <h2 class="p-titulo">INTERINAZGOS JUZGADOS ${t.anio}</h2>
-    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan en 3 días o menos</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
+    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("pendiente") ? ` · <b class="c-rojo">${cuenta("pendiente")} vencido(s) sin desvincular</b>` : ""}${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan en 3 días o menos</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
     ${grupos.map((g) => `<h3 class="p-grupo">${esc(PLURAL[g.c.codigo] || g.c.nombre)}</h3>
       <div class="recuadros">${g.xs.map(recuadro).join("")}</div>`).join("")
       || `<div class="vacio">No hay interinazgos ${ver === "desvinculados" ? "desvinculados" : "vigentes"} para mostrar en ${t.anio}.<br>
@@ -267,16 +271,18 @@ function aplicarModo() {
 // ── Alertas ───────────────────────────────────────────────────────────
 function dibujarAlertas() {
   const a = E.alertas, el = $("#alertas");
-  const vac = a.vacantes_sin_cubrir || [];
-  const n = a.sin_cubrir.length + a.en_conflicto.length + vac.length;
+  const vac = a.vacantes_sin_cubrir || [], pend = a.por_desvincular || [];
+  const n = a.sin_cubrir.length + a.en_conflicto.length + vac.length + pend.length;
   el.hidden = n === 0;
   if (!n) return;
   const abierto = pref.leer("alertasAbiertas", innerWidth > 700);
-  el.innerHTML = `<details ${abierto ? "open" : ""}><summary>⚠ ${n} alerta(s): ${a.sin_cubrir.length} ausente(s) sin cubrir${vac.length ? ` · ${vac.length} puesto(s) vacante(s) sin nadie a cargo` : ""} · ${a.en_conflicto.length} interinato(s) en conflicto</summary><ul>
+  el.innerHTML = `<details ${abierto ? "open" : ""}><summary>⚠ ${n} alerta(s): ${a.sin_cubrir.length} ausente(s) sin cubrir${vac.length ? ` · ${vac.length} puesto(s) vacante(s) sin nadie a cargo` : ""}${pend.length ? ` · ${pend.length} por desvincular` : ""} · ${a.en_conflicto.length} interinato(s) en conflicto</summary><ul>
     ${a.sin_cubrir.map((x, i) => `<li><b>${esc(x.nombre_completo)}</b> (${esc(x.cargo)}, ${esc(x.despacho)}) — licencia ${esc(x.tipo).toLowerCase()} del ${fmt(x.fecha_inicio)} al ${fmt(x.fecha_fin)}: <b>${x.dias_sin_cubrir} día(s) hábil(es) sin interino</b> desde el ${fmt(x.primer_dia)}.
       <button class="btn chico" data-asignar="${i}">Asignar interino</button></li>`).join("")}
     ${vac.map((x, i) => `<li>⚪ <b>Puesto vacante de ${esc(x.cargo)}${x.secretaria ? " (Sria. " + esc(x.secretaria) + ")" : ""}</b> en ${esc(x.despacho)}: <b>${x.dias_sin_cubrir} día(s) hábil(es) sin nadie a cargo</b> desde el ${fmt(x.primer_dia)}.
       <button class="btn chico" data-vacante="${i}">Asignar a cargo</button></li>`).join("")}
+    ${pend.map((x) => `<li>⏰ El interinazgo de <b>${esc(x.interino)}</b> cubriendo a ${esc(x.titular)} <b>venció el ${fmt(x.fecha_fin)}</b> y falta registrar la desvinculación.
+      <button class="btn chico" data-desv="${x.id}">Desvincular</button></li>`).join("")}
     ${a.en_conflicto.map((x) => `<li>⚡ Interinato de <b>${esc(x.interino)}</b> cubriendo a ${esc(x.titular)} (${fmt(x.fecha_inicio)}–${fmt(x.fecha_fin)}) está <b>EN CONFLICTO</b>: el interino tiene licencia.
       <button class="btn chico" data-conflicto="${x.id}">Resolver</button></li>`).join("")}
   </ul></details>`;
@@ -286,6 +292,7 @@ function dibujarAlertas() {
     formInterinato({ titular_id: x.personal_id, fecha_inicio: x.primer_dia, fecha_fin: x.fecha_fin, licencia_id: x.licencia_id });
   }));
   $$("[data-conflicto]", el).forEach((b) => (b.onclick = () => verInterinato(+b.dataset.conflicto)));
+  $$("[data-desv]", el).forEach((b) => (b.onclick = () => verInterinato(+b.dataset.desv)));
   $$("[data-vacante]", el).forEach((b) => (b.onclick = () => {
     const x = vac[+b.dataset.vacante];
     formInterinato({ vacante_id: x.vacante_id, fecha_inicio: x.primer_dia, fecha_fin: x.fecha_hasta || x.ultimo_dia });
@@ -900,6 +907,8 @@ async function verInterinato(id) {
     <dt>Fecha</dt><dd>${fmt(i.fecha_inicio)}</dd>
     <dt>Desvincular</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(i.fecha_fin)}</dd>
     <dt>Despacho</dt><dd>${esc(i.despacho_texto || "—")}</dd>
+    ${i.desvinculado ? `<dt>Desvinculación</dt><dd>✔ El ${fmt(i.fecha_fin)}${i.desvinculado_por_nombre ? `, por <b>${esc(i.desvinculado_por_nombre)}</b> (registrado el ${fmtHora(i.desvinculado_en)})` : " (registro anterior)"}${i.desvinculado_obs ? `<br><span class="ayuda">${esc(i.desvinculado_obs)}</span>` : ""}</dd>`
+      : i.fecha_fin !== "9999-12-31" && i.fecha_fin < E.hoy ? `<dt>Desvinculación</dt><dd><b style="color:var(--licencia)">⚠ Pendiente: venció el ${fmt(i.fecha_fin)} y nadie la confirmó</b></dd>` : ""}
     <dt>Acto de designación</dt><dd>${esc(i.acto_designacion || "—")}</dd>
     ${i.observaciones ? `<dt>Observaciones</dt><dd>${esc(i.observaciones)}</dd>` : ""}
     ${i.motivo_anulacion ? `<dt>Motivo de anulación</dt><dd>${esc(i.motivo_anulacion)}</dd>` : ""}
@@ -909,23 +918,39 @@ async function verInterinato(id) {
   if (i.estado !== "ANULADO") {
     pie.unshift({ texto: "Anular", clase: "peligro", accion: () => anular("interinatos", i) });
     pie.push({ texto: "Editar", clase: "primario", accion: () => { setTimeout(() => formInterinato({}, i), 0); } });
-    if (i.fecha_inicio <= E.hoy && (i.fecha_fin === "9999-12-31" || i.fecha_fin > E.hoy)) {
-      pie.push({ texto: "Desvincular hoy", clase: "primario", accion: async () => {
-        const ok = await confirmar("Desvincular", `<p>¿Desvincular a <b>${esc(i.interino)}</b> hoy, <b>${fmt(E.hoy)}</b>?</p>
-          <p class="ayuda">Se anota hoy como fecha de desvinculación (último día del interinazgo). Mañana pasa a «Desvinculados»
-          y queda en el historial.</p>`, "Desvincular");
-        if (!ok) return false;
-        try {
-          await api("PUT", `/api/interinatos/${i.id}`, { titular_id: i.titular_id, vacante_id: i.vacante_id, interino_id: i.interino_id,
-            licencia_id: i.licencia_id, fecha_inicio: i.fecha_inicio, fecha_fin: E.hoy, despacho_texto: i.despacho_texto,
-            acto_designacion: i.acto_designacion, observaciones: i.observaciones, version: i.version, confirmar_advertencias: true });
-          toast(`${i.interino} desvinculado.`);
-          await recargar();
-        } catch (e) { mostrarError(e); return false; }
-      } });
+    if (!i.desvinculado && i.fecha_inicio <= E.hoy) {
+      pie.push({ texto: "Desvincular…", clase: "primario", accion: () => { formDesvincular(i); return false; } });
     }
   }
   modal($("#modal"), { titulo: `Interinazgo #${i.id}`, cuerpo: html, pie });
+}
+
+/** Acción manual de desvinculación: queda en la auditoría con el usuario que la hace. */
+function formDesvincular(i) {
+  const sugerida = i.fecha_fin !== "9999-12-31" && i.fecha_fin < E.hoy ? i.fecha_fin : E.hoy;
+  const html = `<p>Da por terminado el interinazgo de <b>${esc(i.interino)}</b> cubriendo a <b>${esc(i.titular || "un puesto vacante")}</b>.</p>
+    <form class="form" id="f-desv">
+      <label class="req" for="d-fecha">Fecha de desvinculación</label>
+      <div class="fila-campos"><input type="date" id="d-fecha" required value="${sugerida}" min="${i.fecha_inicio}" max="${E.hoy}">
+        <span class="ayuda">último día del interinazgo</span></div>
+      <label for="d-obs">Observación</label>
+      <input type="text" id="d-obs" maxlength="500" placeholder="Opcional, por ejemplo: reasumió la titular">
+    </form>
+    <p class="ayuda">Queda registrado en la auditoría con su usuario (${esc(E.yo.nombre)}), la fecha y la hora.</p>`;
+  const { cuerpo } = modal($("#modal2"), { titulo: "Desvincular", cuerpo: html, pie: [
+    { texto: "Cancelar" },
+    { texto: "Desvincular", clase: "primario", accion: async () => {
+      const f = $("#f-desv", cuerpo);
+      if (!f.reportValidity()) return false;
+      try {
+        await api("POST", `/api/interinatos/${i.id}/desvincular`, { fecha: $("#d-fecha", f).value,
+          observacion: $("#d-obs", f).value, version: i.version });
+        $("#modal").close();
+        toast(`${i.interino} desvinculado.`);
+        await recargar();
+      } catch (e) { $("#modal2").close(); mostrarError(e); return false; }
+    } },
+  ] });
 }
 
 // ── Puestos vacantes ──────────────────────────────────────────────────

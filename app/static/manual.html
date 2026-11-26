@@ -117,11 +117,21 @@
         <tr><td>⚠ Se desvincula hoy / mañana / en N días</td><td>Ámbar</td><td>Faltan 3 días o menos para desvincular: aparecen primero</td></tr>
         <tr><td>Empieza en N días</td><td>Azul</td><td>Anotado para una fecha futura</td></tr>
         <tr><td>⚡ En conflicto</td><td>Violeta</td><td>El interino recibió una licencia en esas fechas: hay que cambiarlo</td></tr>
-        <tr><td>Desvinculado el …</td><td>Gris punteado</td><td>Ya terminó. Se ve eligiendo «Mostrar: Desvinculados»</td></tr>
+        <tr><td>⚠ Falta desvincular (venció el …)</td><td>Rojo</td><td>Pasó la fecha de Desvincular y nadie registró la desvinculación: <b>sigue en el tablero</b> hasta que alguien la confirme</td></tr>
+        <tr><td>✔ Desvinculado el … por (usuario)</td><td>Gris punteado</td><td>Terminado y confirmado. Se ve eligiendo «Mostrar: Desvinculados»</td></tr>
       </table>
-      <h3>Desvincular</h3>
-      <p>Haga clic en el recuadro: se abre el detalle. <b>Desvincular hoy</b> anota hoy como fecha de desvinculación (al día siguiente el recuadro pasa a «Desvinculados»). Con <b>Editar</b> puede poner otra fecha. Nada se borra: el historial queda guardado.</p>
-      <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular hoy" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar y Desvincular hoy.</figcaption></figure>
+      <h3>Desvincular (dar por terminado)</h3>
+      <p>La desvinculación es una <b>acción manual</b>: alguien tiene que confirmarla, y queda registrado <b>quién</b> lo hizo y <b>cuándo</b>.</p>
+      <ol>
+        <li>Haga clic en el recuadro: se abre el detalle.</li>
+        <li>Pulse <b>Desvincular…</b>.</li>
+        <li>Revise la <b>fecha de desvinculación</b> (por defecto hoy, o la fecha de Desvincular si ya pasó) y, si quiere, escriba una <b>observación</b> (por ejemplo, «reasumió la titular»).</li>
+        <li>Pulse <b>Desvincular</b>.</li>
+      </ol>
+      <p>El recuadro pasa a <b>«✔ Desvinculado el … por (su usuario)»</b> y sale de la vista habitual (queda en «Mostrar: Desvinculados»). En <b>Administración → Auditoría</b> figura la acción <b>DESVINCULAR</b> con el usuario, la fecha, la hora y la observación. Nada se borra.</p>
+      <p>La fecha de <b>Desvincular</b> que se anota al crear el recuadro es la <b>prevista</b>: cuando llega, el recuadro se pone en ámbar y, si pasa sin que nadie lo confirme, en <b>rojo</b>. Para cambiar la fecha prevista (por ejemplo, una prórroga), use <b>Editar</b>.</p>
+      <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar y Desvincular….</figcaption></figure>
+      <figure><img src="/static/manual/24-desvincular.png" alt="Ventana Desvincular con fecha y observación" loading="lazy" style="max-width:640px"><figcaption>Desvincular: fecha y observación; queda registrado con su usuario.</figcaption></figure>
       <h3>Moverse y filtrar</h3>
       <ul>
         <li><b>◀ ▶</b> cambian de año y <b>Hoy</b> vuelve al año actual. Un interinazgo sin fecha de desvinculación aparece también en los años siguientes.</li>

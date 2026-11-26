@@ -195,7 +195,10 @@ def demo() -> None:
         # uno ya desvinculado y uno que empieza la semana próxima
         inter(7, 9, "JUEZ", lunes - timedelta(days=7), None)
         inter(8, 3, "JUEZ", hoy - timedelta(days=5), 8)
-        inter(1, 3, "JUEZ", lunes - timedelta(days=40), 10)
+        ya = inter(1, 3, "JUEZ", lunes - timedelta(days=40), 10)
+        servicios.desvincular_interinato(conn, ya, lunes - timedelta(days=31), "Reasumió la titular (dato de ejemplo)",
+                                         1, uid, hoy)
+        inter(4, 5, "ACTUARIO", hoy - timedelta(days=12), 9)      # vencido y sin desvincular: queda pendiente
         inter(6, 1, "JUEZ", lunes + timedelta(days=8), 5)
         # Actuaria de la Sria. Nº 1 que además está a cargo de la Sria. Nº 2 (vacante)
         # del Juzgado Penal de Garantías 1º Turno

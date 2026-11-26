@@ -243,6 +243,8 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .r-por-vencer { border-color: var(--sin-cubrir); background: #fffaf0; } .r-por-vencer .r-estado { background: var(--sin-cubrir-fondo); color: #7a4a00; }
 .r-proximo { border-color: #9cbfe8; } .r-proximo .r-estado { background: var(--interino-fondo); color: var(--interino); }
 .r-conflicto { border-color: var(--conflicto); } .r-conflicto .r-estado { background: #f3e5f5; color: var(--conflicto); }
+.r-pendiente { border-color: var(--licencia); background: #fff6f6; } .r-pendiente .r-estado { background: var(--licencia-fondo); color: #8e1b1b; }
+.c-rojo { color: var(--licencia); }
 .r-vencido { border-style: dashed; opacity: .75; } .r-vencido .r-estado { background: var(--inhabil); color: var(--texto-suave); }
 .r-nuevo { border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 80px;
   color: var(--primario); font-weight: 700; }

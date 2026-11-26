@@ -106,6 +106,12 @@ class AnularIn(BaseModel):
     version: int
 
 
+class DesvincularIn(BaseModel):
+    fecha: Optional[date] = None            # por defecto, hoy
+    observacion: Optional[str] = Field(default=None, max_length=500)
+    version: int
+
+
 class LoginIn(BaseModel):
     usuario: str
     clave: str
@@ -516,6 +522,8 @@ def _rango(desde: date, hasta: date, maximo: bool = True):
 SQL_INTERINATOS_PIZARRA = """
     SELECT i.id, i.titular_id, i.vacante_id, i.interino_id, i.licencia_id, i.fecha_inicio, i.fecha_fin,
            i.estado, i.version, i.despacho_texto, i.cargo_codigo, x.nombre_completo AS interino,
+           i.desvinculado, i.desvinculado_en, i.desvinculado_obs,
+           (SELECT nombre FROM usuarios WHERE id = i.desvinculado_por) AS desvinculado_por_nombre,
            coalesce(t.nombre_completo,
                     'Puesto vacante' || CASE WHEN v.secretaria IS NOT NULL THEN ' (Sria. ' || v.secretaria || ')' ELSE '' END)
              AS titular,
@@ -701,7 +709,8 @@ def ver_interinato(iid: int, u=Depends(usuario_actual)):
             SELECT i.*, t.nombre_completo AS titular, x.nombre_completo AS interino,
                    v.secretaria AS vacante_secretaria, v.fecha_desde AS vacante_desde,
                    dt.nombre AS despacho_titular, dx.nombre AS despacho_interino, c.nombre AS cargo,
-                   uc.nombre AS creado_por_nombre, um.nombre AS modificado_por_nombre
+                   uc.nombre AS creado_por_nombre, um.nombre AS modificado_por_nombre,
+                   (SELECT nombre FROM usuarios WHERE id = i.desvinculado_por) AS desvinculado_por_nombre
             FROM interinatos i
             LEFT JOIN personal t ON t.id = i.titular_id
             LEFT JOIN vacantes v ON v.id = i.vacante_id
@@ -731,6 +740,15 @@ def editar_interinato(iid: int, body: InterinatoIn, u=Depends(usuario_actual)):
         infos = servicios.editar_interinato(conn, iid, body.model_dump(), body.version, u["id"],
                                             body.confirmar_advertencias)
     return {"id": iid, "avisos": [a.a_dict() for a in infos]}
+
+
+@app.post("/api/interinatos/{iid}/desvincular")
+def desvincular_interinato(iid: int, body: DesvincularIn, u=Depends(usuario_actual)):
+    """Acción manual de desvinculación: queda en la auditoría con el usuario que la hizo."""
+    with db.conexion() as conn:
+        servicios.desvincular_interinato(conn, iid, body.fecha or hoy(), body.observacion, body.version,
+                                         u["id"], hoy())
+    return {"ok": True}
 
 
 @app.post("/api/interinatos/{iid}/anular")
