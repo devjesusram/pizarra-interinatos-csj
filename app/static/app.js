@@ -23,6 +23,7 @@ const finDeSemana = (iso) => [0, 6].includes(aFecha(iso).getUTCDay());
 const conTurno = (despacho, turno) =>
   turno && !String(despacho).toLowerCase().includes(String(turno).toLowerCase()) ? `${despacho} · ${turno}` : despacho;
 
+const SRIAS = Array.from({ length: 10 }, (_, i) => `Nº ${i + 1}`);   // sugeridas; se puede escribir otra
 const minusInicial = (t) => (t ? t[0].toLowerCase() + t.slice(1) : t);
 
 const pref = {
@@ -821,7 +822,7 @@ function formVacante(v = {}, alGuardar) {
   formSimple(v.id ? "Editar puesto vacante" : "Nuevo puesto vacante", [
     { k: "despacho_id", t: "Despacho", tipo: "select", opciones: despachos, req: true, num: true },
     { k: "cargo_codigo", t: "Cargo vacante", tipo: "select", opciones: cargos, req: true },
-    { k: "secretaria", t: "Secretaría", lista: ["Nº 1", "Nº 2", "Nº 3"], ayuda: "Opcional. Ej.: Nº 2" },
+    { k: "secretaria", t: "Secretaría", lista: SRIAS, ayuda: "Opcional. Elija de la lista o escriba otra (Nº 5, Nº 1 bis…)" },
     { k: "fecha_desde", t: "Vacante desde", tipo: "date", req: true },
     { k: "fecha_hasta", t: "Vacante hasta", tipo: "date", ayuda: "Déjelo vacío mientras siga vacante. Complételo cuando se designe a un titular." },
     { k: "observaciones", t: "Observaciones" },
@@ -933,7 +934,7 @@ async function admPersonal(el) {
     { k: "nombre_completo", t: "Nombre completo", req: true, min: 3, ayuda: "Formato sugerido: Apellido, Nombre" },
     { k: "cargo_codigo", t: "Cargo", tipo: "select", opciones: cargos, req: true },
     { k: "despacho_id", t: "Despacho", tipo: "select", opciones: despachos, req: true, num: true },
-    { k: "secretaria", t: "Secretaría", lista: ["Nº 1", "Nº 2", "Nº 3"], ayuda: "Opcional. Ej.: Nº 1 (la Secretaría del juzgado a su cargo)" },
+    { k: "secretaria", t: "Secretaría", lista: SRIAS, ayuda: "Opcional. Elija de la lista o escriba otra (Nº 5, Nº 1 bis…)" },
     { k: "email", t: "Correo", tipo: "email" },
     { k: "activo", t: "Estado", tipo: "check", ayuda: "Activo" },
   ], p, async (d) => {
@@ -945,11 +946,12 @@ async function admPersonal(el) {
     <input type="search" id="a-buscar" placeholder="Buscar…"></div>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Nombre</th><th>Cargo</th><th>Despacho</th><th>Sria.</th><th>Localidad</th><th></th></tr></thead>
     <tbody>${ps.map((p) => `<tr class="${p.activo ? "" : "inactivo"}" data-q="${esc((p.nombre_completo + p.despacho).toLowerCase())}"><td>${esc(p.nombre_completo)}</td><td>${esc(p.cargo)}</td><td>${esc(conTurno(p.despacho, p.turno))}</td><td>${esc(p.secretaria || "—")}</td><td>${esc(p.localidad)}</td>
-      <td style="white-space:nowrap"><button class="btn chico" data-id="${p.id}">Editar</button>
+      <td style="white-space:nowrap">${p.cargo_codigo === "JUEZ" ? `<button class="btn chico primario" data-equipo="${p.despacho_id}" title="Ver y asignar las secretarias de este juez">Secretarías</button> ` : ""}<button class="btn chico" data-id="${p.id}">Editar</button>
         ${p.registros ? "" : `<button class="btn chico peligro" data-borrar="${p.id}" title="Solo para funcionarios sin licencias ni interinatos (por ejemplo, duplicados)">Eliminar</button>`}</td></tr>`).join("")}</tbody></table></div>
     <p class="ayuda">«Eliminar» solo aparece en funcionarios sin licencias ni interinatos (por ejemplo, cargados por error).
       Para quien tiene historial, use «Editar» y desmarque «Activo».</p>`;
   $("#a-nuevo", el).onclick = () => { if (!E.cat.despachos.length) return toast("Primero cargue al menos un despacho."); editar({ activo: true }); };
+  $$("[data-equipo]", el).forEach((b) => (b.onclick = () => equipoDespacho(+b.dataset.equipo)));
   $$("[data-borrar]", el).forEach((b) => (b.onclick = async () => {
     const p = ps.find((x) => x.id === +b.dataset.borrar);
     const ok = await confirmar("Eliminar funcionario",
@@ -1023,17 +1025,23 @@ async function equipoDespacho(did) {
   const equipo = ps.filter((p) => p.despacho_id === did)
     .sort((a, b) => orden(a.cargo_codigo) - orden(b.cargo_codigo) || String(a.secretaria || "~").localeCompare(String(b.secretaria || "~"))
                     || a.nombre_completo.localeCompare(b.nombre_completo));
-  const otros = ps.filter((p) => p.despacho_id !== did && p.activo);
-  const srias = ["", "Nº 1", "Nº 2", "Nº 3", "Nº 4"];
-  const selSria = (actual, attrs) => `<select ${attrs}>${[...new Set([...srias, actual || ""])].map((x) =>
-    `<option value="${esc(x)}" ${x === (actual || "") ? "selected" : ""}>${x ? "Sria. " + esc(x) : "—"}</option>`).join("")}</select>`;
+  const jueces = equipo.filter((p) => p.cargo_codigo === "JUEZ" && p.activo);
+  // Si el despacho ya tiene juez titular, no se ofrecen jueces para "agregar" (evita mover al juez por error)
+  const otros = ps.filter((p) => p.despacho_id !== did && p.activo && !(jueces.length && p.cargo_codigo === "JUEZ"));
+  const srias = SRIAS;
+  const selSria = (actual, attrs) => `<span class="sria">Sria. <input type="text" list="dl-srias" ${attrs} value="${esc(actual || "")}"
+    placeholder="—" maxlength="20" style="width:96px"></span>`;
+  const secretarias = [...new Set(equipo.filter((p) => p.secretaria).map((p) => p.secretaria))].sort();
   let vacs = [];
   try { vacs = (await api("GET", "/api/vacantes?solo_vigentes=true")).filter((v) => v.despacho_id === did); } catch (e) { /* sin vacantes */ }
   const opcionesOtros = E.cat.cargos.map((c) => {
     const xs = otros.filter((p) => p.cargo_codigo === c.codigo);
     return xs.length ? `<optgroup label="${esc(c.nombre)}">${xs.map((p) => `<option value="${p.id}">${esc(p.nombre_completo)} — hoy en ${esc(conTurno(p.despacho, p.turno))}</option>`).join("")}</optgroup>` : "";
   }).join("");
-  const html = `<p><b>${esc(conTurno(d.nombre, d.turno))}</b> · ${esc(d.fuero)} · ${esc(d.localidad)}</p>
+  const html = `<datalist id="dl-srias">${SRIAS.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
+    <p><b>${esc(conTurno(d.nombre, d.turno))}</b> · ${esc(d.fuero)} · ${esc(d.localidad)}</p>
+    <p>${jueces.length ? `Juez titular: <b>${jueces.map((j) => esc(j.nombre_completo)).join(", ")}</b>` : `<b style="color:var(--sin-cubrir)">⚠ Este despacho todavía no tiene juez.</b> Agréguelo abajo o con «+ Nuevo funcionario».`}
+      · Secretarías: <b>${secretarias.length ? secretarias.map((x) => "Nº " + esc(x).replace(/^Nº\s*/, "")).join(", ") : "ninguna asignada"}</b></p>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Cargo</th><th>Funcionario</th><th>Secretaría</th><th></th></tr></thead><tbody>
     ${equipo.map((p) => `<tr class="${p.activo ? "" : "inactivo"}"><td>${esc(p.cargo)}</td><td>${esc(p.nombre_completo)}${p.activo ? "" : " (dado de baja)"}</td>
       <td>${["ACTUARIO", "SECRETARIO"].includes(p.cargo_codigo) || p.secretaria ? selSria(p.secretaria, `data-sria="${p.id}"`) : "—"}</td><td><button class="btn chico" data-editar="${p.id}">Editar</button></td></tr>`).join("")
@@ -1043,8 +1051,11 @@ async function equipoDespacho(did) {
     <h3 style="margin:16px 0 6px;font-size:14px">Agregar al equipo</h3>
     <div class="fila-campos"><select id="eq-persona" style="flex:1;min-width:240px"><option value="">— Elija un funcionario de otro despacho —</option>${opcionesOtros}</select>
       ${selSria("", 'id="eq-sria"')}<button class="btn primario" id="eq-agregar">Agregar</button></div>
-    <p class="ayuda">El funcionario pasa a este despacho (deja el anterior). Para alguien que todavía no está cargado, use «+ Nuevo funcionario».</p>`;
-  const { cuerpo } = modal($("#modal"), { titulo: "Equipo del despacho", ancho: true, cuerpo: html, pie: [
+    <p class="ayuda">Así se asignan las secretarias al juez: elija a cada una, póngale su Secretaría (Nº 1, Nº 2… o escriba otra) y pulse «Agregar».
+      La persona pasa a este despacho y deja el anterior. ${jueces.length ? "No se ofrecen jueces porque este despacho ya tiene su juez titular." : ""}
+      Para alguien que todavía no está cargado, use «+ Nuevo funcionario».</p>`;
+  const titulo = jueces.length ? `Equipo de ${jueces[0].nombre_completo} (Juez) — ${conTurno(d.nombre, d.turno)}` : `Equipo de ${conTurno(d.nombre, d.turno)}`;
+  const { cuerpo } = modal($("#modal"), { titulo, ancho: true, cuerpo: html, pie: [
     { texto: "← Volver a Despachos", accion: () => { setTimeout(() => administrar("despachos"), 0); } },
     { texto: "+ Nuevo funcionario", accion: () => { nuevoEnDespacho(); return false; } },
   ] });
@@ -1057,7 +1068,9 @@ async function equipoDespacho(did) {
   };
   $$("[data-sria]", cuerpo).forEach((sel) => (sel.onchange = async () => {
     const p = equipo.find((x) => x.id === +sel.dataset.sria);
-    try { await guardarPersona(p, { secretaria: sel.value || null }, `Secretaría de ${p.nombre_completo} actualizada.`); }
+    const valor = sel.value.trim() || null;
+    if (valor === (p.secretaria || null)) return;
+    try { await guardarPersona(p, { secretaria: valor }, `Secretaría de ${p.nombre_completo} actualizada.`); }
     catch (e) { mostrarError(e); }
   }));
   $$("[data-editar]", cuerpo).forEach((b) => (b.onclick = () => {
@@ -1066,7 +1079,7 @@ async function equipoDespacho(did) {
       { k: "nombre_completo", t: "Nombre completo", req: true, min: 3 },
       { k: "cargo_codigo", t: "Cargo", tipo: "select", opciones: E.cat.cargos.map((c) => [c.codigo, c.nombre]), req: true },
       { k: "despacho_id", t: "Despacho", tipo: "select", opciones: E.cat.despachos.map((x) => [x.id, conTurno(x.nombre, x.turno)]), req: true, num: true },
-      { k: "secretaria", t: "Secretaría", lista: srias.filter(Boolean) },
+      { k: "secretaria", t: "Secretaría", lista: SRIAS },
       { k: "email", t: "Correo", tipo: "email" },
       { k: "activo", t: "Estado", tipo: "check", ayuda: "Activo" },
     ], p, async (x) => { await guardarPersona(p, x, "Funcionario actualizado."); });
@@ -1078,14 +1091,14 @@ async function equipoDespacho(did) {
       <b>${esc(conTurno(p.despacho, p.turno))}</b> a <b>${esc(conTurno(d.nombre, d.turno))}</b>.</p>
       <p class="ayuda">Sus licencias e interinatos se conservan.</p>`, "Agregar");
     if (!ok) return;
-    try { await guardarPersona(p, { despacho_id: did, secretaria: $("#eq-sria", cuerpo).value || null }, `${p.nombre_completo} se agregó al equipo.`); }
+    try { await guardarPersona(p, { despacho_id: did, secretaria: $("#eq-sria", cuerpo).value.trim() || null }, `${p.nombre_completo} se agregó al equipo.`); }
     catch (e) { mostrarError(e); }
   };
   function nuevoEnDespacho() {
     formSimple(`Nuevo funcionario en ${conTurno(d.nombre, d.turno)}`, [
       { k: "nombre_completo", t: "Nombre completo", req: true, min: 3, ayuda: "Formato sugerido: Apellido, Nombre" },
       { k: "cargo_codigo", t: "Cargo", tipo: "select", opciones: E.cat.cargos.map((c) => [c.codigo, c.nombre]), req: true },
-      { k: "secretaria", t: "Secretaría", lista: srias.filter(Boolean), ayuda: "Opcional. Ej.: Nº 1" },
+      { k: "secretaria", t: "Secretaría", lista: SRIAS, ayuda: "Opcional. Elija de la lista o escriba otra" },
       { k: "email", t: "Correo", tipo: "email" },
     ], { cargo_codigo: "SECRETARIO" }, async (x) => {
       await api("POST", "/api/personal", { ...x, despacho_id: did, activo: true });
