@@ -1400,7 +1400,7 @@ function conectarEventos() {
     if ($("#modal").open || $("#modal2").open || !$("#tv").hidden) return;
     if (e.target.matches("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === "l" && E.modo !== "tablero") { e.preventDefault(); formLicencia(); }
+    if (k === "l") { e.preventDefault(); formLicencia(); }
     else if (k === "i") { e.preventDefault(); formInterinato(); }
     else if (k === "t") $("#hoy").click();
     else if (e.key === "ArrowLeft") $("#ant").click();
