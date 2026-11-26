@@ -230,9 +230,9 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
             # Si pasó la validación (R4), deja de estar en conflicto
             cur = conn.execute(f"""UPDATE interinatos SET {', '.join(c + ' = :' + c for c in CAMPOS_INTERINATO)},
                                           cargo_codigo = :cargo, estado = 'VIGENTE', version = version + 1,
-                                          desvinculado = CASE WHEN :fecha_fin > :hoy THEN 0 ELSE desvinculado END,
-                                          desvinculado_por = CASE WHEN :fecha_fin > :hoy THEN NULL ELSE desvinculado_por END,
-                                          desvinculado_en = CASE WHEN :fecha_fin > :hoy THEN NULL ELSE desvinculado_en END,
+                                          desvinculado = CASE WHEN :fecha_fin >= :hoy THEN 0 ELSE desvinculado END,   -- el último día es hoy o después: todavía no se desvinculó
+                                          desvinculado_por = CASE WHEN :fecha_fin >= :hoy THEN NULL ELSE desvinculado_por END,
+                                          desvinculado_en = CASE WHEN :fecha_fin >= :hoy THEN NULL ELSE desvinculado_en END,
                                           modificado_por = :u, modificado_en = :ahora
                                    WHERE id = :id AND version = :v""",
                                {**datos, "cargo": _cargo_cubierto(conn, datos), "u": usuario_id,
@@ -248,7 +248,9 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
 
 def desvincular_interinato(conn, int_id: int, fecha, observacion: str | None, version: int,
                            usuario_id: int, hoy: date) -> None:
-    """Acción manual: da por terminado el interinazgo en 'fecha' y registra quién lo hizo."""
+    """Acción manual: desvincula al interino en 'fecha' y registra quién lo hizo.
+    El interino cubre las 24 horas de su último día y se lo desvincula al día siguiente,
+    así que el último día del interinazgo (fecha_fin) queda en 'fecha' menos un día."""
     fecha = a_fecha(fecha)
     with escritura(conn):
         i = uno(conn, "SELECT fecha_inicio, estado FROM interinatos WHERE id = ?", (int_id,))
@@ -258,20 +260,22 @@ def desvincular_interinato(conn, int_id: int, fecha, observacion: str | None, ve
             raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "E1", "No se puede desvincular un interinazgo anulado.")])
         if fecha > hoy:
             raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "D1", "La fecha de desvinculación no puede ser posterior a hoy. "
-                                                           "Para una fecha futura, use «Editar» y cargue «Desvincular».")])
-        if fecha < a_fecha(i["fecha_inicio"]):
-            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "D2", f"La fecha de desvinculación no puede ser anterior al inicio "
-                                                           f"del interinazgo ({f(i['fecha_inicio'])}).")])
+                                                           "Para una fecha futura, use «Editar» y cargue «Hasta».")])
+        if fecha <= a_fecha(i["fecha_inicio"]):
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "D2", f"La desvinculación tiene que ser posterior al inicio del "
+                                                           f"interinazgo ({f(i['fecha_inicio'])}): el interino cubre por lo "
+                                                           f"menos ese día. Si nunca llegó a cubrir, use «Anular».")])
+        ultimo = fecha - timedelta(days=1)
         cur = conn.execute("""UPDATE interinatos SET fecha_fin = ?, desvinculado = 1, desvinculado_por = ?,
                                      desvinculado_en = ?, desvinculado_obs = ?, version = version + 1,
                                      modificado_por = ?, modificado_en = ?
                               WHERE id = ? AND version = ?""",
-                           (iso(fecha), usuario_id, ahora_utc(), (observacion or "").strip() or None,
+                           (iso(ultimo), usuario_id, ahora_utc(), (observacion or "").strip() or None,
                             usuario_id, ahora_utc(), int_id, version))
         if cur.rowcount == 0:
             raise ConflictoVersion(_quien_modifico(conn, "interinatos", int_id))
         auditar(conn, "interinatos", int_id, "DESVINCULAR",
-                {"fecha_desvinculacion": iso(fecha), "observacion": observacion}, usuario_id)
+                {"fecha_desvinculacion": iso(fecha), "ultimo_dia": iso(ultimo), "observacion": observacion}, usuario_id)
 
 
 def anular_interinato(conn, int_id: int, motivo: str, version: int, usuario_id: int) -> None:

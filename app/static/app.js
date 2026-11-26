@@ -262,21 +262,26 @@ function iniciarAutoActualizacion() {
 const SIN_FIN = "9999-12-31";
 const PLURAL = { JUEZ: "Jueces", ACTUARIO: "Actuarios/as Judiciales", SECRETARIO: "Secretarios/as de Juzgado", UJIER: "Ujieres" };
 
+/** El interino cubre las 24 horas de su último día (fecha_fin) y se lo desvincula al día siguiente. */
+const diaDesvincular = (fin) => (!fin || fin === SIN_FIN ? null : sumar(fin, 1));
+
 function estadoRecuadro(i, hoy) {
   const dias = (iso) => difDias(hoy, iso);
+  const desv = diaDesvincular(i.fecha_fin);
   if (i.desvinculado) {
     const quien = i.desvinculado_por_nombre ? ` por ${i.desvinculado_por_nombre}` : " (registro anterior)";
-    return { clase: "vencido", texto: `✔ Desvinculado el ${fmt(i.fecha_fin)}${quien}` };
+    return { clase: "vencido", texto: `✔ Desvinculado el ${fmt(desv)}${quien}` };
   }
   if (i.estado === "EN_CONFLICTO") return { clase: "conflicto", texto: "⚡ En conflicto: el interino tiene licencia" };
-  if (i.fecha_fin !== SIN_FIN && i.fecha_fin < hoy) return { clase: "pendiente", texto: `⚠ Falta desvincular (venció el ${fmt(i.fecha_fin)})` };
+  if (desv && desv < hoy) return { clase: "pendiente", texto: `⚠ Falta desvincular (correspondía el ${fmt(desv)})` };
+  if (desv === hoy) return { clase: "por-vencer", texto: `⚠ Desvincular HOY (cubrió hasta el ${fmtCorto(i.fecha_fin)})` };
   if (i.fecha_inicio > hoy) {
     const n = dias(i.fecha_inicio);
     return { clase: "proximo", texto: n === 1 ? "Empieza mañana" : `Empieza en ${n} días` };
   }
-  if (i.fecha_fin === SIN_FIN) return { clase: "vigente", texto: "Vigente · sin fecha de desvinculación" };
-  const n = dias(i.fecha_fin);
-  if (n <= 3) return { clase: "por-vencer", texto: n === 0 ? "⚠ Se desvincula HOY" : n === 1 ? "⚠ Se desvincula mañana" : `⚠ Se desvincula en ${n} días` };
+  if (!desv) return { clase: "vigente", texto: "Vigente · sin fecha de desvinculación" };
+  const n = dias(desv);
+  if (n <= 3) return { clase: "por-vencer", texto: n === 1 ? "⚠ Se desvincula mañana (hoy es su último día)" : `⚠ Se desvincula en ${n} días` };
   return { clase: "vigente", texto: "Vigente" };
 }
 
@@ -304,11 +309,11 @@ function dibujarTablero() {
         <dt>INTERINO</dt><dd>${esc(i.interino)}</dd>
         <dt>FECHA</dt><dd>${fmt(i.fecha_inicio)}</dd>
         <dt>DESPACHO</dt><dd>${i.despacho_texto ? esc(i.despacho_texto) : `<span class="r-auto">${esc(i.despacho_titular)}</span>`}</dd>
-        <dt>DESVINCULAR</dt><dd>${i.fecha_fin === SIN_FIN ? '<span class="r-auto">— (sin fecha)</span>' : fmt(i.fecha_fin)}</dd>
+        <dt>DESVINCULAR</dt><dd>${i.fecha_fin === SIN_FIN ? '<span class="r-auto">— (sin fecha)</span>' : `${fmt(diaDesvincular(i.fecha_fin))} <span class="r-auto">· cubre hasta el ${fmtCorto(i.fecha_fin)}</span>`}</dd>
       </dl></div>`;
   tab.innerHTML = `<div class="pizarra-acrilica">
     <h2 class="p-titulo">INTERINAZGOS JUZGADOS ${t.anio}</h2>
-    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("pendiente") ? ` · <b class="c-rojo">${cuenta("pendiente")} vencido(s) sin desvincular</b>` : ""}${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan en 3 días o menos</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
+    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("pendiente") ? ` · <b class="c-rojo">${cuenta("pendiente")} sin desvincular</b>` : ""}${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan hoy o en los próximos 3 días</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
     ${grupos.map((g) => `<h3 class="p-grupo">${esc(PLURAL[g.c.codigo] || g.c.nombre)}</h3>
       <div class="recuadros">${g.xs.map(recuadro).join("")}</div>`).join("")
       || `<div class="vacio">No hay interinazgos ${ver === "desvinculados" ? "desvinculados" : "vigentes"} para mostrar en ${t.anio}.<br>
@@ -363,7 +368,7 @@ function dibujarAlertas() {
       <button class="btn chico" data-asignar="${i}">Asignar interino</button></li>`).join("")}
     ${vac.map((x, i) => `<li>⚪ <b>Puesto vacante de ${esc(x.cargo)}${x.secretaria ? " (Sria. " + esc(x.secretaria) + ")" : ""}</b> en ${esc(x.despacho)}: <b>${x.dias_sin_cubrir} día(s) hábil(es) sin nadie a cargo</b> desde el ${fmt(x.primer_dia)}.
       <button class="btn chico" data-vacante="${i}">Asignar a cargo</button></li>`).join("")}
-    ${pend.map((x) => `<li>⏰ El interinazgo de <b>${esc(x.interino)}</b> cubriendo a ${esc(x.titular)} <b>venció el ${fmt(x.fecha_fin)}</b> y falta registrar la desvinculación.
+    ${pend.map((x) => `<li>⏰ El interinazgo de <b>${esc(x.interino)}</b> cubriendo a ${esc(x.titular)} cubrió hasta el ${fmt(x.fecha_fin)}: <b>correspondía desvincularlo el ${fmt(diaDesvincular(x.fecha_fin))}</b> y falta registrarlo.
       <button class="btn chico" data-desv="${x.id}">Desvincular</button></li>`).join("")}
     ${a.en_conflicto.map((x) => `<li>⚡ Interinato de <b>${esc(x.interino)}</b> cubriendo a ${esc(x.titular)} (${fmt(x.fecha_inicio)}–${fmt(x.fecha_fin)}) está <b>EN CONFLICTO</b>: el interino tiene licencia.
       <button class="btn chico" data-conflicto="${x.id}">Resolver</button></li>`).join("")}
@@ -656,6 +661,8 @@ function decodificarMime(s) {
     } catch { return txt; }
   }).replace(/\?=\s+=\?/g, "");
 }
+/** Fecha del correo para el formulario: las anteriores a 1.7.0 tenían también la hora. */
+const fechaCorreo = (v) => (!v ? "" : v.length <= 10 ? v : aLocal(new Date(v)).slice(0, 10));
 const aLocal = (d) => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 16); };
 
 function formLicencia(ini = {}, existente = null) {
@@ -674,16 +681,15 @@ function formLicencia(ini = {}, existente = null) {
     <label class="req">Fechas</label>
     <div class="fila-campos">Desde <input type="date" id="l-ini" required value="${esc(l.fecha_inicio || "")}">
       Hasta <input type="date" id="l-fin" required value="${esc(l.fecha_fin || "")}"> <span class="ayuda" id="l-dias"></span></div>
-    <label for="l-res">Nº de resolución</label><input type="text" id="l-res" value="${esc(l.nro_resolucion || "")}">
+    <label for="l-res">Providencia</label><input type="text" id="l-res" value="${esc(l.nro_resolucion || "")}">
     <h3>Correo de origen</h3>
     <label>Respaldo</label>
     <div><div class="zona-archivo" id="l-zona" tabindex="0">📎 Arrastre aquí el PDF o el correo (.eml), o haga clic para elegirlo
       <input type="file" id="l-archivo" hidden accept=".pdf,.eml,.msg,.png,.jpg,.jpeg,.txt,.doc,.docx"></div>
       <div class="ayuda" id="l-archivo-nombre">${existente?.adjunto_nombre ? "Adjunto actual: " + esc(existente.adjunto_nombre) + " (si elige otro, lo reemplaza)" : "Si arrastra un .eml, se completan remitente, fecha y asunto."}</div></div>
     <label for="l-rem">Remitente</label><input type="text" id="l-rem" value="${esc(l.correo_remitente || "")}">
-    <label for="l-fcor">Fecha del correo</label><input type="datetime-local" id="l-fcor" value="${l.correo_fecha ? aLocal(new Date(l.correo_fecha)) : ""}">
+    <label for="l-fcor">Fecha del correo</label><div class="fila-campos"><input type="date" id="l-fcor" value="${esc(fechaCorreo(l.correo_fecha))}"><span class="ayuda">opcional</span></div>
     <label for="l-asu">Asunto</label><input type="text" id="l-asu" value="${esc(l.correo_asunto || "")}">
-    <label for="l-enl">Enlace externo</label><input type="url" id="l-enl" placeholder="https://… (opcional)" value="${esc(l.enlace_externo || "")}">
     <label for="l-obs">Observaciones</label><textarea id="l-obs">${esc(l.observaciones || "")}</textarea>
     <div class="full" id="l-impacto"></div>
   </form>`;
@@ -726,7 +732,7 @@ function formLicencia(ini = {}, existente = null) {
       const d = leerEml(await file.text());
       if (d.remitente && !$("#l-rem", f).value) $("#l-rem", f).value = d.remitente;
       if (d.asunto && !$("#l-asu", f).value) $("#l-asu", f).value = d.asunto;
-      if (d.fecha && !$("#l-fcor", f).value) $("#l-fcor", f).value = aLocal(d.fecha);
+      if (d.fecha && !$("#l-fcor", f).value) $("#l-fcor", f).value = aLocal(d.fecha).slice(0, 10);
       toast("Datos del correo completados. Revíselos antes de guardar.");
     }
   };
@@ -746,7 +752,7 @@ function formLicencia(ini = {}, existente = null) {
       personal_id: +$("#l-per", f).value, tipo_licencia_id: +$("#l-tipo", f).value,
       fecha_inicio: $("#l-ini", f).value, fecha_fin: $("#l-fin", f).value, organo_aprobador: org.value,
       nro_resolucion: $("#l-res", f).value, correo_remitente: $("#l-rem", f).value, correo_asunto: $("#l-asu", f).value,
-      correo_fecha: fcor ? new Date(fcor).toISOString() : null, enlace_externo: $("#l-enl", f).value,
+      correo_fecha: fcor || null, enlace_externo: l.enlace_externo || null,   // el enlace ya no se carga; se conserva si había
       observaciones: $("#l-obs", f).value,
     };
     try {
@@ -775,8 +781,8 @@ async function verLicencia(id) {
     <dt>Funcionario</dt><dd><b>${esc(l.nombre_completo)}</b> — ${esc(l.despacho)}</dd>
     <dt>Tipo</dt><dd>${esc(l.tipo)} <span class="chip ${l.estado}">${l.estado}</span></dd>
     <dt>Período</dt><dd>${fmt(l.fecha_inicio)} al ${fmt(l.fecha_fin)} <span class="ayuda">${contarDias(l.fecha_inicio, l.fecha_fin)}</span></dd>
-    <dt>Aprobada por</dt><dd>${l.organo_aprobador === "CONSEJO" ? "Consejo de Administración" : "RRHH"}${l.nro_resolucion ? " · Res. " + esc(l.nro_resolucion) : ""}</dd>
-    <dt>Correo</dt><dd>${esc(l.correo_remitente || "—")}${l.correo_fecha ? " · " + fmtHora(l.correo_fecha) : ""}<br>${esc(l.correo_asunto || "")}</dd>
+    <dt>Aprobada por</dt><dd>${l.organo_aprobador === "CONSEJO" ? "Consejo de Administración" : "RRHH"}${l.nro_resolucion ? " · Providencia " + esc(l.nro_resolucion) : ""}</dd>
+    <dt>Correo</dt><dd>${esc(l.correo_remitente || "—")}${l.correo_fecha ? " · " + (l.correo_fecha.length <= 10 ? fmt(l.correo_fecha) : fmtHora(l.correo_fecha)) : ""}<br>${esc(l.correo_asunto || "")}</dd>
     <dt>Respaldo</dt><dd>${l.adjunto_nombre ? `<a href="/api/licencias/${l.id}/adjunto" target="_blank" rel="noopener">📎 ${esc(l.adjunto_nombre)}</a>` : "—"}
       ${l.enlace_externo ? `<br><a href="${esc(l.enlace_externo)}" target="_blank" rel="noopener noreferrer">🔗 Enlace externo</a>` : ""}</dd>
     <dt>Cubierto por</dt><dd>${l.interinatos.length ? l.interinatos.map((i) => `${esc(i.interino)} (${fmtCorto(i.fecha_inicio)}–${fmtCorto(i.fecha_fin)})${i.estado === "EN_CONFLICTO" ? " ⚡" : ""}`).join("<br>") : "<b style='color:var(--sin-cubrir)'>⚠ Sin interino asignado</b>"}</dd>
@@ -839,9 +845,13 @@ async function formInterinato(ini = {}, existente = null) {
     <label class="req" for="i-ini">Fecha</label>
     <div class="fila-campos"><input type="date" id="i-ini" required value="${esc(v.fecha_inicio || "")}">
       <span class="ayuda">inicio del interinazgo</span></div>
-    <label for="i-fin">Desvincular</label>
+    <label for="i-fin">Hasta</label>
     <div class="fila-campos"><input type="date" id="i-fin" value="${esc(v.fecha_fin && v.fecha_fin !== "9999-12-31" ? v.fecha_fin : "")}">
-      <span class="ayuda">Déjelo vacío si todavía no se sabe: queda vigente hasta que lo complete.</span></div>
+      <span class="ayuda">último día que cubre (las 24 horas)</span></div>
+    <label for="i-desv">Desvincular</label>
+    <div class="fila-campos"><input type="date" id="i-desv">
+      <span class="ayuda">el día siguiente: se completa solo</span></div>
+    <div></div><div class="ayuda" style="margin-top:-6px">Cargue una u otra fecha. Si todavía no se sabe, deje ambas vacías.</div>
     <label for="i-desp">Despacho</label>
     <input type="text" id="i-desp" maxlength="120" placeholder="Referencia, por ejemplo: Penal Gtías. 1º Turno" value="${esc(v.despacho_texto || "")}">
     <label>Motivo</label><div id="i-motivo" class="ayuda"></div>
@@ -935,8 +945,18 @@ async function formInterinato(ini = {}, existente = null) {
     if (x && x.fecha_hasta && !$("#i-fin", f).value) $("#i-fin", f).value = x.fecha_hasta;
     cargarCand();
   };
-  $("#i-ini", f).onchange = () => { if ($("#i-fin", f).value && $("#i-fin", f).value < $("#i-ini", f).value) $("#i-fin", f).value = $("#i-ini", f).value; cargarCand(); };
-  $("#i-fin", f).onchange = cargarCand;
+  // «Hasta» y «Desvincular» van juntos: Desvincular = Hasta + 1 día
+  const ponerDesv = () => { const h = $("#i-fin", f).value; $("#i-desv", f).value = h ? sumar(h, 1) : ""; };
+  ponerDesv();
+  $("#i-ini", f).onchange = () => {
+    const a = $("#i-ini", f).value;
+    if ($("#i-fin", f).value && $("#i-fin", f).value < a) { $("#i-fin", f).value = a; ponerDesv(); }
+    $("#i-desv", f).min = a ? sumar(a, 1) : "";
+    cargarCand();
+  };
+  $("#i-fin", f).onchange = () => { ponerDesv(); cargarCand(); };
+  $("#i-desv", f).onchange = () => { const d = $("#i-desv", f).value; $("#i-fin", f).value = d ? sumar(d, -1) : ""; cargarCand(); };
+  if ($("#i-ini", f).value) $("#i-desv", f).min = sumar($("#i-ini", f).value, 1);
   $("#i-buscar", f).oninput = pintarCand;
   mostrarModo();
   cargarCand();
@@ -987,10 +1007,11 @@ async function verInterinato(id) {
     ${cubre}
     <dt>Interino</dt><dd><b>${esc(i.interino)}</b> — ${esc(i.despacho_interino)}</dd>
     <dt>Fecha</dt><dd>${fmt(i.fecha_inicio)}</dd>
-    <dt>Desvincular</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(i.fecha_fin)}</dd>
+    <dt>Hasta</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(i.fecha_fin) + " (último día, las 24 horas)"}</dd>
+    <dt>Desvincular</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(diaDesvincular(i.fecha_fin))}</dd>
     <dt>Despacho</dt><dd>${esc(i.despacho_texto || "—")}</dd>
-    ${i.desvinculado ? `<dt>Desvinculación</dt><dd>✔ El ${fmt(i.fecha_fin)}${i.desvinculado_por_nombre ? `, por <b>${esc(i.desvinculado_por_nombre)}</b> (registrado el ${fmtHora(i.desvinculado_en)})` : " (registro anterior)"}${i.desvinculado_obs ? `<br><span class="ayuda">${esc(i.desvinculado_obs)}</span>` : ""}</dd>`
-      : i.fecha_fin !== "9999-12-31" && i.fecha_fin < E.hoy ? `<dt>Desvinculación</dt><dd><b style="color:var(--licencia)">⚠ Pendiente: venció el ${fmt(i.fecha_fin)} y nadie la confirmó</b></dd>` : ""}
+    ${i.desvinculado ? `<dt>Desvinculación</dt><dd>✔ El ${fmt(diaDesvincular(i.fecha_fin))}${i.desvinculado_por_nombre ? `, por <b>${esc(i.desvinculado_por_nombre)}</b> (registrado el ${fmtHora(i.desvinculado_en)})` : " (registro anterior)"}${i.desvinculado_obs ? `<br><span class="ayuda">${esc(i.desvinculado_obs)}</span>` : ""}</dd>`
+      : i.fecha_fin !== "9999-12-31" && i.fecha_fin < E.hoy ? `<dt>Desvinculación</dt><dd><b style="color:var(--licencia)">⚠ Pendiente: correspondía el ${fmt(diaDesvincular(i.fecha_fin))} y nadie la confirmó</b></dd>` : ""}
     <dt>Acto de designación</dt><dd>${esc(i.acto_designacion || "—")}</dd>
     ${i.observaciones ? `<dt>Observaciones</dt><dd>${esc(i.observaciones)}</dd>` : ""}
     ${i.motivo_anulacion ? `<dt>Motivo de anulación</dt><dd>${esc(i.motivo_anulacion)}</dd>` : ""}
@@ -1000,7 +1021,7 @@ async function verInterinato(id) {
   if (i.estado !== "ANULADO") {
     pie.unshift({ texto: "Anular", clase: "peligro", accion: () => anular("interinatos", i) });
     pie.push({ texto: "Editar", clase: "primario", accion: () => { setTimeout(() => formInterinato({}, i), 0); } });
-    if (!i.desvinculado && i.fecha_inicio <= E.hoy) {
+    if (!i.desvinculado && i.fecha_inicio < E.hoy) {   // se desvincula desde el día siguiente al inicio
       pie.push({ texto: "Desvincular…", clase: "primario", accion: () => { formDesvincular(i); return false; } });
     }
   }
@@ -1009,12 +1030,13 @@ async function verInterinato(id) {
 
 /** Acción manual de desvinculación: queda en la auditoría con el usuario que la hace. */
 function formDesvincular(i) {
-  const sugerida = i.fecha_fin !== "9999-12-31" && i.fecha_fin < E.hoy ? i.fecha_fin : E.hoy;
+  const prevista = diaDesvincular(i.fecha_fin);
+  const sugerida = prevista && prevista <= E.hoy ? prevista : E.hoy;
   const html = `<p>Da por terminado el interinazgo de <b>${esc(i.interino)}</b> cubriendo a <b>${esc(i.titular || "un puesto vacante")}</b>.</p>
     <form class="form" id="f-desv">
       <label class="req" for="d-fecha">Fecha de desvinculación</label>
-      <div class="fila-campos"><input type="date" id="d-fecha" required value="${sugerida}" min="${i.fecha_inicio}" max="${E.hoy}">
-        <span class="ayuda">último día del interinazgo</span></div>
+      <div class="fila-campos"><input type="date" id="d-fecha" required value="${sugerida}" min="${sumar(i.fecha_inicio, 1)}" max="${E.hoy}">
+        <span class="ayuda" id="d-ultimo"></span></div>
       <label for="d-obs">Observación</label>
       <input type="text" id="d-obs" maxlength="500" placeholder="Opcional, por ejemplo: reasumió la titular">
     </form>
@@ -1033,6 +1055,10 @@ function formDesvincular(i) {
       } catch (e) { $("#modal2").close(); mostrarError(e); return false; }
     } },
   ] });
+  const ultimo = () => { const d = $("#d-fecha", cuerpo).value;
+    $("#d-ultimo", cuerpo).textContent = d ? `cubrió hasta el ${fmt(sumar(d, -1))} (las 24 horas)` : ""; };
+  $("#d-fecha", cuerpo).oninput = ultimo;
+  ultimo();
 }
 
 // ── Puestos vacantes ──────────────────────────────────────────────────

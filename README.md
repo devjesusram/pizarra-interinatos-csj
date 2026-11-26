@@ -21,7 +21,7 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 
 - **Tablero de interinazgos (pantalla principal):** reproduce la pizarra acrílica "INTERINAZGOS JUZGADOS 2026" con
   un recuadro por interinazgo: TITULAR, INTERINO, FECHA, DESPACHO (texto libre) y DESVINCULAR (puede quedar en
-  blanco). Colores por estado (vigente, se desvincula en ≤ 3 días, por empezar, en conflicto, desvinculado), filtro
+  blanco). El interino cubre las 24 horas de su último día («Hasta») y se lo desvincula **al día siguiente**. Colores por estado (vigente, se desvincula en ≤ 3 días, por empezar, en conflicto, desvinculado), filtro
   por año, cargo y búsqueda, botón «Desvincular hoy» e impresión.
 - **Pizarra / planner:** una fila por funcionario y una columna por día, agrupada por cargo o por despacho.
   - 🟥 **Licencia** (con 📎 si tiene adjunto)

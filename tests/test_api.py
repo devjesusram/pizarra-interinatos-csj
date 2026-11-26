@@ -313,10 +313,14 @@ def test_desvincular_queda_en_auditoria_con_el_usuario(cliente, datos, conn):
     assert r.status_code == 409 and r.json()["hallazgos"][0]["regla"] == "D1"
     r = cliente.post(f"/api/interinatos/{iid}/desvincular", json={"fecha": (hoy - timedelta(days=30)).isoformat(), "version": v})
     assert r.status_code == 409 and r.json()["hallazgos"][0]["regla"] == "D2"
+    # Ni el mismo día del inicio: el interino cubre por lo menos ese día
+    r = cliente.post(f"/api/interinatos/{iid}/desvincular", json={"fecha": (hoy - timedelta(days=10)).isoformat(), "version": v})
+    assert r.status_code == 409 and r.json()["hallazgos"][0]["regla"] == "D2"
     r = cliente.post(f"/api/interinatos/{iid}/desvincular", json={"observacion": "Reasumió la titular", "version": v})
     assert r.status_code == 200
     det = cliente.get(f"/api/interinatos/{iid}").json()
-    assert det["fecha_fin"] == hoy.isoformat() and det["desvinculado"] == 1
+    # Desvinculado hoy: cubrió hasta ayer (las 24 horas del último día)
+    assert det["fecha_fin"] == (hoy - timedelta(days=1)).isoformat() and det["desvinculado"] == 1
     assert det["desvinculado_por_nombre"] == "Operador" and det["desvinculado_obs"] == "Reasumió la titular"
     aud = conn.execute("SELECT a.accion, u.usuario FROM auditoria a JOIN usuarios u ON u.id = a.usuario_id "
                        "WHERE a.tabla = 'interinatos' AND a.registro_id = ? ORDER BY a.id", (iid,)).fetchall()
@@ -337,7 +341,10 @@ def test_vencido_sin_desvincular_queda_pendiente_en_alertas(cliente, datos):
     pend = cliente.get("/api/alertas").json()["por_desvincular"]
     assert [p["id"] for p in pend] == [iid]
     v = cliente.get(f"/api/interinatos/{iid}").json()["version"]
-    cliente.post(f"/api/interinatos/{iid}/desvincular", json={"fecha": (hoy - timedelta(days=2)).isoformat(), "version": v})
+    # Se desvincula al día siguiente del último día
+    r = cliente.post(f"/api/interinatos/{iid}/desvincular", json={"fecha": (hoy - timedelta(days=1)).isoformat(), "version": v})
+    assert r.status_code == 200
+    assert cliente.get(f"/api/interinatos/{iid}").json()["fecha_fin"] == (hoy - timedelta(days=2)).isoformat()
     assert cliente.get("/api/alertas").json()["por_desvincular"] == []
     # Si se prorroga (fecha futura), vuelve a estar vigente y sin desvincular
     det = cliente.get(f"/api/interinatos/{iid}").json()
@@ -345,3 +352,35 @@ def test_vencido_sin_desvincular_queda_pendiente_en_alertas(cliente, datos):
                                                      "fecha_inicio": det["fecha_inicio"], "fecha_fin": (hoy + timedelta(days=5)).isoformat(),
                                                      "version": det["version"], "confirmar_advertencias": True})
     assert r.status_code == 200 and cliente.get(f"/api/interinatos/{iid}").json()["desvinculado"] == 0
+
+
+def test_ultimo_dia_hoy_no_esta_pendiente_y_editar_con_hasta_hoy_reactiva(cliente, datos):
+    """El interino cubre las 24 horas de su último día: si el último día es hoy, todavía no corresponde
+    desvincularlo. Si un desvinculado se edita con «Hasta» = hoy, vuelve a estar vigente."""
+    from datetime import datetime, timedelta
+    from app import config
+    hoy = datetime.now(config.ZONA).date()
+    entrar(cliente)
+    iid = cliente.post("/api/interinatos", json={"titular_id": datos["ujier1"], "interino_id": datos["ujier2"],
+                                                 "fecha_inicio": (hoy - timedelta(days=5)).isoformat(),
+                                                 "fecha_fin": hoy.isoformat(), "confirmar_advertencias": True}).json()["id"]
+    assert cliente.get("/api/alertas").json()["por_desvincular"] == []
+    v = cliente.get(f"/api/interinatos/{iid}").json()["version"]
+    assert cliente.post(f"/api/interinatos/{iid}/desvincular", json={"fecha": hoy.isoformat(), "version": v}).status_code == 200
+    det = cliente.get(f"/api/interinatos/{iid}").json()
+    assert det["desvinculado"] == 1
+    r = cliente.put(f"/api/interinatos/{iid}", json={"titular_id": det["titular_id"], "interino_id": det["interino_id"],
+                                                     "fecha_inicio": det["fecha_inicio"], "fecha_fin": hoy.isoformat(),
+                                                     "version": det["version"], "confirmar_advertencias": True})
+    assert r.status_code == 200 and cliente.get(f"/api/interinatos/{iid}").json()["desvinculado"] == 0
+
+
+def test_licencia_con_providencia_y_fecha_de_correo_sin_hora(cliente, datos):
+    entrar(cliente)
+    r = cliente.post("/api/licencias", json={
+        "personal_id": datos["juez1"], "tipo_licencia_id": 1, "organo_aprobador": "CONSEJO",
+        "fecha_inicio": "2027-03-01", "fecha_fin": "2027-03-05", "nro_resolucion": "Prov. 123/2027",
+        "correo_fecha": "2027-02-20"})
+    assert r.status_code == 201, r.text
+    lic = cliente.get(f"/api/licencias/{r.json()['id']}").json()
+    assert lic["correo_fecha"] == "2027-02-20" and lic["nro_resolucion"] == "Prov. 123/2027"

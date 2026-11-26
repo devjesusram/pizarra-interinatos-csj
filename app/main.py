@@ -75,7 +75,7 @@ class LicenciaIn(BaseModel):
     nro_resolucion: Optional[str] = None
     correo_remitente: Optional[str] = None
     correo_asunto: Optional[str] = None
-    correo_fecha: Optional[datetime] = None
+    correo_fecha: Optional[date] = None        # solo la fecha del correo (sin hora)
     enlace_externo: Optional[str] = None
     observaciones: Optional[str] = None
     version: Optional[int] = None

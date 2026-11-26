@@ -64,7 +64,7 @@ def generar(conn, desde: date, hasta: date, personal_id: int | None, nombre: str
         quien = "" if personal_id else f"{r['nombre_completo']} – "
         desc = [f"Despacho: {r['despacho']}"]
         if r["nro_resolucion"]:
-            desc.append(f"Resolución: {r['nro_resolucion']}")
+            desc.append(f"Providencia: {r['nro_resolucion']}")
         desc.append(f"Cubierto por: {r['cubierto_por'] or 'SIN INTERINO ASIGNADO'}")
         cal.add_component(_evento(f"lic-{r['id']}@pizarra-interinatos", f"{quien}Licencia ({r['tipo']})",
                                   r["fecha_inicio"], r["fecha_fin"], r["estado"] == "ANULADA",

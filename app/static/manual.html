@@ -98,26 +98,26 @@
         <tr><td>INTERINO</td><td>Quien lo cubre (siempre del mismo cargo)</td></tr>
         <tr><td>FECHA</td><td>Inicio del interinazgo</td></tr>
         <tr><td>DESPACHO</td><td>Texto libre de referencia. Se propone el despacho del titular y se puede escribir otro</td></tr>
-        <tr><td>DESVINCULAR</td><td>Fecha en que se desvincula al interino (último día). <b>Puede quedar en blanco</b> si todavía no se sabe</td></tr>
+        <tr><td>DESVINCULAR</td><td>Día en que se desvincula al interino: <b>el día siguiente a su último día</b>, porque cubre las 24 horas del último día. Debajo se lee «cubre hasta el …». <b>Puede quedar en blanco</b> si todavía no se sabe</td></tr>
       </table>
       <figure><img src="/static/manual/20-tablero.png" alt="Tablero de interinazgos con recuadros" loading="lazy"><figcaption>Tablero: cada recuadro muestra su estado arriba y los cinco campos de la pizarra.</figcaption></figure>
       <h3>Anotar un interinazgo</h3>
       <ol>
         <li>Pulse <b>+ Interinazgo</b> (o tecla <b>I</b>), o el recuadro punteado <b>+ Nuevo interinazgo</b>.</li>
         <li>Elija el <b>Titular</b> y la <b>Fecha</b> de inicio.</li>
-        <li>Si ya se sabe, cargue <b>Desvincular</b>; si no, déjelo vacío: el recuadro queda vigente hasta que la complete.</li>
+        <li>Si ya se sabe, cargue <b>Hasta</b> (el último día que cubre, por ejemplo el último día de la licencia) <b>o</b> <b>Desvincular</b> (el día siguiente): al escribir una, la otra se completa sola. Si todavía no se sabe, deje las dos vacías: el recuadro queda vigente hasta que las complete.</li>
         <li>Revise el <b>Despacho</b> (viene propuesto) o escríbalo como lo anotaban en la pizarra.</li>
         <li>Elija al <b>Interino</b> en la lista y pulse <b>Asignar</b>.</li>
       </ol>
-      <figure><img src="/static/manual/21-nuevo-interinazgo.png" alt="Formulario Nuevo interinazgo" loading="lazy"><figcaption>Nuevo interinazgo: Desvincular puede quedar en blanco; Despacho es texto libre.</figcaption></figure>
+      <figure><img src="/static/manual/21-nuevo-interinazgo.png" alt="Formulario Nuevo interinazgo" loading="lazy"><figcaption>Nuevo interinazgo: «Hasta» es el último día que cubre y «Desvincular» el día siguiente; pueden quedar en blanco. Despacho es texto libre.</figcaption></figure>
       <h3>Qué indica cada recuadro</h3>
       <table>
         <tr><th>Estado (arriba del recuadro)</th><th>Color</th><th>Significa</th></tr>
         <tr><td>Vigente / Vigente · sin fecha de desvinculación</td><td>Verde</td><td>El interino está cubriendo</td></tr>
-        <tr><td>⚠ Se desvincula hoy / mañana / en N días</td><td>Ámbar</td><td>Faltan 3 días o menos para desvincular: aparecen primero</td></tr>
+        <tr><td>⚠ Desvincular HOY / Se desvincula mañana / en N días</td><td>Ámbar</td><td>Hoy corresponde desvincular (el interino cubrió hasta ayer) o faltan 3 días o menos. «Se desvincula mañana» significa que hoy es su último día. Aparecen primero</td></tr>
         <tr><td>Empieza en N días</td><td>Azul</td><td>Anotado para una fecha futura</td></tr>
         <tr><td>⚡ En conflicto</td><td>Violeta</td><td>El interino recibió una licencia en esas fechas: hay que cambiarlo</td></tr>
-        <tr><td>⚠ Falta desvincular (venció el …)</td><td>Rojo</td><td>Pasó la fecha de Desvincular y nadie registró la desvinculación: <b>sigue en el tablero</b> hasta que alguien la confirme</td></tr>
+        <tr><td>⚠ Falta desvincular (correspondía el …)</td><td>Rojo</td><td>Pasó el día de Desvincular y nadie registró la desvinculación: <b>sigue en el tablero</b> hasta que alguien la confirme</td></tr>
         <tr><td>✔ Desvinculado el … por (usuario)</td><td>Gris punteado</td><td>Terminado y confirmado. Se ve eligiendo «Mostrar: Desvinculados»</td></tr>
       </table>
       <h3>Desvincular (dar por terminado)</h3>
@@ -125,10 +125,11 @@
       <ol>
         <li>Haga clic en el recuadro: se abre el detalle.</li>
         <li>Pulse <b>Desvincular…</b>.</li>
-        <li>Revise la <b>fecha de desvinculación</b> (por defecto hoy, o la fecha de Desvincular si ya pasó) y, si quiere, escriba una <b>observación</b> (por ejemplo, «reasumió la titular»).</li>
+        <li>Revise la <b>fecha de desvinculación</b>: por defecto, el día de Desvincular (o hoy, si se desvincula antes de lo previsto). Al lado se lee <b>«cubrió hasta el …»</b>, el día anterior. Si quiere, escriba una <b>observación</b> (por ejemplo, «reasumió la titular»).</li>
         <li>Pulse <b>Desvincular</b>.</li>
       </ol>
       <p>El recuadro pasa a <b>«✔ Desvinculado el … por (su usuario)»</b> y sale de la vista habitual (queda en «Mostrar: Desvinculados»). En <b>Administración → Auditoría</b> figura la acción <b>DESVINCULAR</b> con el usuario, la fecha, la hora y la observación. Nada se borra.</p>
+      <p><b>Ejemplo:</b> una licencia del 01/12 al 05/12. Se anota el interinazgo con <b>Fecha</b> 01/12 y <b>Hasta</b> 05/12; el interino cubre el 05/12 completo y el recuadro dice <b>DESVINCULAR 06/12</b>. El 06/12 aparece <b>«⚠ Desvincular HOY»</b> y se registra la desvinculación con fecha 06/12. No se puede desvincular el mismo día del inicio (si nunca llegó a cubrir, use <b>Anular</b>) ni con fecha futura.</p>
       <p>La fecha de <b>Desvincular</b> que se anota al crear el recuadro es la <b>prevista</b>: cuando llega, el recuadro se pone en ámbar y, si pasa sin que nadie lo confirme, en <b>rojo</b>. Para cambiar la fecha prevista (por ejemplo, una prórroga), use <b>Editar</b>.</p>
       <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar y Desvincular….</figcaption></figure>
       <figure><img src="/static/manual/24-desvincular.png" alt="Ventana Desvincular con fecha y observación" loading="lazy" style="max-width:640px"><figcaption>Desvincular: fecha y observación; queda registrado con su usuario.</figcaption></figure>
@@ -185,8 +186,8 @@
         <li>Haga clic en <b>+ Licencia</b> (o tecla <b>L</b>). Atajo: haga clic o arrastre sobre los días de la fila del funcionario y el formulario se abre con el nombre y las fechas cargados.</li>
         <li>Elija el <b>Funcionario</b> y el <b>Tipo de licencia</b>. “Aprobada por” se completa sola según el cargo; cámbiela si corresponde.</li>
         <li>Cargue <b>Desde</b> y <b>Hasta</b>. Debajo se ven los días corridos y hábiles.</li>
-        <li>Escriba el <b>Nº de resolución</b>.</li>
-        <li>En <b>Respaldo</b>, arrastre el PDF o el correo guardado (.eml), o haga clic para elegirlo (máximo 15 MB). Con un .eml, el remitente, la fecha y el asunto se completan solos; revíselos.</li>
+        <li>Escriba la <b>Providencia</b>.</li>
+        <li>En <b>Respaldo</b>, arrastre el PDF o el correo guardado (.eml), o haga clic para elegirlo (máximo 15 MB). Con un .eml, el remitente, la fecha y el asunto se completan solos; revíselos. Los datos del correo son opcionales; de la fecha del correo basta con el día (sin hora).</li>
         <li>Lea el recuadro <b>Impacto en la pizarra</b>: avisa si la persona queda sin interino o si estaba cubriendo a alguien.</li>
         <li>Pulse <b>Guardar</b>, o <b>Guardar y asignar interino ▸</b> para pasar directo al paso siguiente con las fechas ya cargadas.</li>
       </ol>
