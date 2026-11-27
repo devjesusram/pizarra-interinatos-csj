@@ -40,6 +40,8 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 - **Secretarías y puestos vacantes:** cada funcionario puede tener su Secretaría (Nº 1, Nº 2…). Un puesto sin
   titular se carga como **vacante**, y quien queda a cargo se asigna como un interinato de puesto vacante. Si un
   puesto vacante se queda sin nadie a cargo, aparece en las alertas.
+- **Titular de más de un juzgado:** un juez (o actuario/a, secretario/a) puede ser titular de dos o más despachos sin
+  cambiar de despacho principal. Un solo interino cubre todos sus juzgados.
 - **Juez responsable:** en la vista por despacho, cada encabezado muestra el juez y, si está ausente, quién está a
   cargo ese día.
 - **Exportación `.ics`:** archivo descargable y enlace de suscripción por funcionario.

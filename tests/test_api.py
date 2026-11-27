@@ -212,7 +212,7 @@ def test_manual_sin_internet_ni_sesion(cliente):
     assert r.status_code == 200 and "Manual de usuario" in r.text
     import re
     imagenes = re.findall(r'src="(/static/manual/[^"]+)"', r.text)
-    assert len(imagenes) == 26
+    assert len(imagenes) == 28
     for src in imagenes:                                  # todas las capturas están incluidas
         assert cliente.get(src).status_code == 200
     assert "http" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', r.text)).replace("http://172.31.60.254:8090", "")
@@ -454,3 +454,48 @@ def test_juez_titular_de_un_juzgado_cubre_provisoriamente_otro_sin_moverse(clien
     r = cliente.post("/api/interinatos", json={"titular_id": datos["juez3"], "interino_id": jueza,
                                                "fecha_inicio": hoy.isoformat(), "confirmar_advertencias": True})
     assert r.status_code == 201 and any(a["regla"] == "R5-info" for a in r.json()["avisos"])
+
+
+def test_juez_titular_de_dos_juzgados(cliente, datos, conn):
+    entrar(cliente)
+    j4 = cliente.post("/api/despachos", json={"nombre": "Juzgado 4", "fuero": "Civil", "localidad": "Caacupé"}).json()["id"]
+    propio = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["juez1"],)).fetchone()["despacho_id"]
+    # Un ujier atiende un solo despacho
+    r = cliente.post(f"/api/personal/{datos['ujier1']}/despachos-extra", json={"despacho_id": j4})
+    assert r.status_code == 409 and "ujier" in r.json()["detail"].lower()
+    # El juez pasa a ser titular también del J4, sin moverse de su despacho
+    assert cliente.post(f"/api/personal/{datos['juez1']}/despachos-extra", json={"despacho_id": j4}).status_code == 201
+    p = [x for x in cliente.get("/api/personal").json() if x["id"] == datos["juez1"]][0]
+    assert p["despacho_id"] == propio and [e["id"] for e in p["despachos_extra"]] == [j4]
+    assert [e["id"] for e in [x for x in cliente.get("/api/pizarra?desde=2026-11-16&hasta=2026-11-29").json()["personal"]
+                              if x["id"] == datos["juez1"]][0]["despachos_extra"]] == [j4]
+    # No se repite, ni se agrega su propio despacho, ni un segundo juez titular en el mismo despacho
+    assert cliente.post(f"/api/personal/{datos['juez1']}/despachos-extra", json={"despacho_id": j4}).status_code == 409
+    assert cliente.post(f"/api/personal/{datos['juez1']}/despachos-extra", json={"despacho_id": propio}).status_code == 409
+    r = cliente.post(f"/api/personal/{datos['juez2']}/despachos-extra", json={"despacho_id": j4})
+    assert r.status_code == 409 and "ya tiene juez titular" in r.json()["detail"]
+    # Un solo interino cubre a la persona (los dos despachos) y el despacho propio no cambió
+    r = cliente.post("/api/interinatos", json={"titular_id": datos["juez1"], "interino_id": datos["juez3"],
+                                               "fecha_inicio": "2026-12-01", "fecha_fin": "2026-12-10",
+                                               "confirmar_advertencias": True})
+    assert r.status_code == 201
+    # No se puede eliminar el J4 mientras tenga titulares adicionales
+    assert cliente.delete(f"/api/despachos/{j4}").status_code == 409
+    aud = [x["accion"] for x in conn.execute("SELECT accion FROM auditoria WHERE tabla='personal' AND registro_id=? ORDER BY id",
+                                              (datos["juez1"],)).fetchall()]
+    assert "AGREGAR_DESPACHO" in aud
+    # Quitarlo
+    assert cliente.delete(f"/api/personal/{datos['juez1']}/despachos-extra/{j4}").status_code == 200
+    assert cliente.delete(f"/api/personal/{datos['juez1']}/despachos-extra/{j4}").status_code == 404
+    assert cliente.delete(f"/api/despachos/{j4}").status_code == 200
+    # Si pasa a ser su despacho principal, deja de ser «adicional»
+    j5 = cliente.post("/api/despachos", json={"nombre": "Juzgado 5", "fuero": "Civil", "localidad": "Caacupé"}).json()["id"]
+    cliente.post(f"/api/personal/{datos['actuario1']}/despachos-extra", json={"despacho_id": j5})
+    a = [x for x in cliente.get("/api/personal").json() if x["id"] == datos["actuario1"]][0]
+    cliente.put(f"/api/personal/{datos['actuario1']}", json={"nombre_completo": a["nombre_completo"], "cargo_codigo": "ACTUARIO",
+                                                             "despacho_id": j5, "activo": True})
+    a = [x for x in cliente.get("/api/personal").json() if x["id"] == datos["actuario1"]][0]
+    assert a["despacho_id"] == j5 and a["despachos_extra"] == []
+    # Solo un administrador
+    entrar(cliente, "oper")
+    assert cliente.post(f"/api/personal/{datos['juez3']}/despachos-extra", json={"despacho_id": j5}).status_code == 403

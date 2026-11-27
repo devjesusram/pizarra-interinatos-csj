@@ -23,6 +23,12 @@ const finDeSemana = (iso) => [0, 6].includes(aFecha(iso).getUTCDay());
 const conTurno = (despacho, turno) =>
   turno && !String(despacho).toLowerCase().includes(String(turno).toLowerCase()) ? `${despacho} · ${turno}` : despacho;
 
+/** Funcionarios que pueden ser titulares de más de un despacho (los ujieres, no). */
+const MULTIDESPACHO = ["JUEZ", "ACTUARIO", "SECRETARIO"];
+const extrasDe = (p) => p.despachos_extra || [];
+/** Todos los despachos de una persona, el principal y los adicionales: "Penal 3º Turno / Penal 1º Turno". */
+const despachosDe = (p) => [conTurno(p.despacho, p.turno), ...extrasDe(p).map((e) => conTurno(e.nombre, e.turno))].join(" / ");
+
 const SRIAS = Array.from({ length: 10 }, (_, i) => `Nº ${i + 1}`);   // sugeridas; se puede escribir otra
 const minusInicial = (t) => (t ? t[0].toLowerCase() + t.slice(1) : t);
 
@@ -481,7 +487,7 @@ function filtrar(p) {
   if (ff && p.fuero !== ff) return false;
   if (ft && p.turno !== ft) return false;
   if (fl && p.localidad !== fl) return false;
-  if (q && !(p.nombre_completo + " " + p.despacho).toLowerCase().includes(q)) return false;
+  if (q && !(p.nombre_completo + " " + p.despacho + " " + extrasDe(p).map((e) => e.nombre).join(" ")).toLowerCase().includes(q)) return false;
   return true;
 }
 
@@ -499,7 +505,7 @@ function juezResponsable(despachoId) {
   const etq = ref === E.hoy ? "hoy" : `el ${fmtCorto(ref)}`;
   const vigente = (x, a = "fecha_inicio", b = "fecha_fin") => x[a] <= ref && (!x[b] || ref <= x[b]);
   const partes = [];
-  for (const j of E.datos.personal.filter((p) => p.despacho_id === despachoId && p.cargo_codigo === "JUEZ")) {
+  for (const j of E.datos.personal.filter((p) => p.cargo_codigo === "JUEZ" && (p.despacho_id === despachoId || extrasDe(p).some((e) => e.id === despachoId)))) {
     const cub = E.datos.interinatos.find((i) => i.titular_id === j.id && vigente(i));
     const lic = E.datos.licencias.find((l) => l.personal_id === j.id && vigente(l));
     partes.push(`Juez: ${j.nombre_completo}` + (cub ? ` (a cargo ${etq}: ${cub.interino}, interino)` : lic ? ` (⚠ de licencia ${etq}, sin interino)` : ""));
@@ -517,7 +523,11 @@ function dibujarPizarra() {
   const soloNov = $("#f-novedades").checked;
   const porCargo = E.vista === "cargo";
   const grupos = new Map();
-  for (const p of [...E.datos.personal, ...E.datos.vacantes.map(filaVacante)]) {
+  // En la vista por despacho, quien es titular de más de un juzgado figura también en cada uno de ellos
+  const copias = porCargo ? [] : E.datos.personal.flatMap((p) => extrasDe(p).map((e) => ({
+    ...p, despacho_id: e.id, despacho: e.nombre, turno: e.turno, fuero: e.fuero, localidad: e.localidad,
+    esExtra: true, principal: conTurno(p.despacho, p.turno), despachos_extra: [] })));
+  for (const p of [...E.datos.personal, ...copias, ...E.datos.vacantes.map(filaVacante)]) {
     if (!filtrar(p)) continue;
     const ev = eventosDe(p, dias);
     const clave = porCargo ? p.cargo_codigo : "d" + p.despacho_id;
@@ -555,7 +565,7 @@ function dibujarPizarra() {
       filas++;
       const n = Math.max(1, ev.carriles.length);
       const sria = p.secretaria ? ` · Sria. ${p.secretaria}` : "";
-      const sub = (porCargo ? conTurno(p.despacho, p.turno) : p.cargo) + sria;
+      const sub = (porCargo ? despachosDe(p) : p.cargo) + sria + (p.esExtra ? ` · titular también de ${p.principal}` : "");
       html += `<div class="fila${p.esVacante ? " vacante" : ""}" ${estiloDias} data-pid="${p.id}">
         <div class="nombre" style="grid-row:1 / span ${n}"><span class="n">${p.esVacante ? "⚪ " : ""}${esc(p.nombre_completo)}${ev.carga >= 2 ? `<span class="carga" title="Despachos que cubre a la vez">cubre ${ev.carga}</span>` : ""}</span><span class="s" title="${esc(sub)}">${esc(sub)}</span></div>`;
       for (const d of dias) {
@@ -642,7 +652,7 @@ function opcionesPersonal(seleccion, filtro = () => true) {
     porCargo.get(p.cargo).push(p);
   }
   return `<option value="">— Seleccione —</option>` + [...porCargo.entries()].map(([c, ps]) =>
-    `<optgroup label="${esc(c)}">${ps.map((p) => `<option value="${p.id}" ${p.id === seleccion ? "selected" : ""}>${esc(p.nombre_completo)} — ${esc(conTurno(p.despacho, p.turno))}</option>`).join("")}</optgroup>`).join("");
+    `<optgroup label="${esc(c)}">${ps.map((p) => `<option value="${p.id}" ${p.id === seleccion ? "selected" : ""}>${esc(p.nombre_completo)} — ${esc(despachosDe(p))}</option>`).join("")}</optgroup>`).join("");
 }
 
 function contarDias(a, b) {
@@ -940,13 +950,13 @@ async function formInterinato(ini = {}, existente = null) {
   };
   $("#i-tit", f).addEventListener("change", () => {
     const t = pm.get(+$("#i-tit", f).value);
-    if (t) proponerDespacho(conTurno(t.despacho, t.turno));
+    if (t) proponerDespacho(despachosDe(t).slice(0, 120));
   });
   $("#i-vac", f).addEventListener("change", () => {
     const x = vacantes.find((y) => y.id === +$("#i-vac", f).value);
     if (x) proponerDespacho(conTurno(x.despacho, x.turno) + (x.secretaria ? ` · Sria. ${x.secretaria}` : ""));
   });
-  if (!existente && v.titular_id) { const t = pm.get(v.titular_id); if (t) proponerDespacho(conTurno(t.despacho, t.turno)); }
+  if (!existente && v.titular_id) { const t = pm.get(v.titular_id); if (t) proponerDespacho(despachosDe(t).slice(0, 120)); }
   $("#i-tit", f).onchange = () => { licenciaId = null; elegido = null; cargarCand(); };
   $("#i-vac", f).onchange = () => {
     elegido = null;
@@ -1253,12 +1263,13 @@ async function admPersonal(el) {
   el.innerHTML = `<div class="fila-campos" style="margin-bottom:8px"><button class="btn primario" id="a-nuevo">+ Funcionario</button>
     <input type="search" id="a-buscar" placeholder="Buscar…"></div>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Nombre</th><th>Cargo</th><th>Despacho</th><th>Sria.</th><th>Localidad</th><th></th></tr></thead>
-    <tbody>${ps.map((p) => `<tr class="${p.activo ? "" : "inactivo"}" data-q="${esc((p.nombre_completo + p.despacho).toLowerCase())}"><td>${esc(p.nombre_completo)}</td><td>${esc(p.cargo)}</td><td>${esc(conTurno(p.despacho, p.turno))}</td><td>${esc(p.secretaria || "—")}</td><td>${esc(p.localidad)}</td>
-      <td style="white-space:nowrap">${p.cargo_codigo === "JUEZ" ? `<button class="btn chico primario" data-equipo="${p.despacho_id}" title="Ver y asignar las secretarias de este juez">Secretarías</button> ` : ""}<button class="btn chico" data-id="${p.id}">Editar</button>
+    <tbody>${ps.map((p) => `<tr class="${p.activo ? "" : "inactivo"}" data-q="${esc((p.nombre_completo + p.despacho).toLowerCase())}"><td>${esc(p.nombre_completo)}</td><td>${esc(p.cargo)}</td><td>${esc(conTurno(p.despacho, p.turno))}${extrasDe(p).length ? `<br><span class="ayuda">+ ${extrasDe(p).map((e) => esc(conTurno(e.nombre, e.turno))).join(" · ")}</span>` : ""}</td><td>${esc(p.secretaria || "—")}</td><td>${esc(p.localidad)}</td>
+      <td style="white-space:nowrap">${p.cargo_codigo === "JUEZ" ? `<button class="btn chico primario" data-equipo="${p.despacho_id}" title="Ver y asignar las secretarias de este juez">Secretarías</button> ` : ""}${MULTIDESPACHO.includes(p.cargo_codigo) ? `<button class="btn chico" data-juzgados="${p.id}" title="Si es titular de más de un juzgado">${extrasDe(p).length ? `Juzgados (+${extrasDe(p).length})` : "+ Juzgado"}</button> ` : ""}<button class="btn chico" data-id="${p.id}">Editar</button>
         ${p.registros ? "" : `<button class="btn chico peligro" data-borrar="${p.id}" title="Solo para funcionarios sin licencias ni interinatos (por ejemplo, duplicados)">Eliminar</button>`}</td></tr>`).join("")}</tbody></table></div>
     <p class="ayuda">«Eliminar» solo aparece en funcionarios sin licencias ni interinatos (por ejemplo, cargados por error).
       Para quien tiene historial, use «Editar» y desmarque «Activo».</p>`;
   $("#a-nuevo", el).onclick = () => { if (!E.cat.despachos.length) return toast("Primero cargue al menos un despacho."); editar({ activo: true }); };
+  $$("[data-juzgados]", el).forEach((b) => (b.onclick = () => formJuzgados(+b.dataset.juzgados)));
   $$("[data-equipo]", el).forEach((b) => (b.onclick = () => equipoDespacho(+b.dataset.equipo)));
   $$("[data-borrar]", el).forEach((b) => (b.onclick = async () => {
     const p = ps.find((x) => x.id === +b.dataset.borrar);
@@ -1325,6 +1336,52 @@ async function eliminarRegistro(url, titulo, queHtml, despues) {
 }
 
 /** Equipo de un despacho: juez, actuarios, secretarias (con su Secretaría) y ujier; permite sumar funcionarios. */
+/** Ventana «Juzgados» de un funcionario: su despacho principal y los otros de los que también es titular. */
+async function formJuzgados(pid) {
+  let ps;
+  try { ps = await api("GET", "/api/personal"); } catch (e) { return mostrarError(e); }
+  const p = ps.find((x) => x.id === pid);
+  if (!p) return;
+  const ocupados = new Set(ps.filter((x) => x.id !== pid && x.activo && x.cargo_codigo === "JUEZ")
+    .flatMap((x) => [x.despacho_id, ...extrasDe(x).map((e) => e.id)]));
+  const propios = new Set([p.despacho_id, ...extrasDe(p).map((e) => e.id)]);
+  const opciones = E.cat.despachos.filter((d) => d.activo && !propios.has(d.id) && !(p.cargo_codigo === "JUEZ" && ocupados.has(d.id)))
+    .map((d) => `<option value="${d.id}">${esc(conTurno(d.nombre, d.turno))} · ${esc(d.localidad)}</option>`).join("");
+  const html = `<p><b>${esc(p.nombre_completo)}</b> · ${esc(p.cargo)}</p>
+    <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Juzgado</th><th>Condición</th><th></th></tr></thead><tbody>
+      <tr><td>${esc(conTurno(p.despacho, p.turno))}</td><td>Principal</td><td></td></tr>
+      ${extrasDe(p).map((e) => `<tr><td>${esc(conTurno(e.nombre, e.turno))}</td><td>Titular también</td>
+        <td><button class="btn chico peligro" data-quitar="${e.id}">Quitar</button></td></tr>`).join("")}
+    </tbody></table></div>
+    <h3 style="margin:16px 0 6px;font-size:14px">Agregar otro juzgado</h3>
+    <div class="fila-campos"><select id="j-despacho" style="flex:1;min-width:260px"><option value="">— Elija el juzgado —</option>${opciones}</select>
+      <button class="btn primario" id="j-agregar">Agregar</button></div>
+    <p class="ayuda">${esc(p.nombre_completo)} <b>no cambia de despacho</b>: sigue en ${esc(conTurno(p.despacho, p.turno))} y además figura como
+      titular del juzgado que elija. Si se ausenta, <b>un solo interino</b> cubre todos sus juzgados.
+      ${p.cargo_codigo === "JUEZ" ? "Solo se ofrecen juzgados que todavía no tienen juez titular." : ""}</p>`;
+  const { cuerpo } = modal($("#modal"), { titulo: "Juzgados de " + p.nombre_completo, ancho: true, cuerpo: html, pie: [
+    { texto: "← Volver a Personal", accion: () => { setTimeout(() => administrar("personal"), 0); } },
+  ] });
+  $("#j-agregar", cuerpo).onclick = async () => {
+    const did = +$("#j-despacho", cuerpo).value;
+    if (!did) return toast("Elija el juzgado.");
+    try {
+      await api("POST", `/api/personal/${pid}/despachos-extra`, { despacho_id: did });
+      toast(`${p.nombre_completo} figura ahora como titular también de ese juzgado.`);
+      await refrescarCatalogos();
+      formJuzgados(pid);
+    } catch (e) { mostrarError(e); }
+  };
+  $$("[data-quitar]", cuerpo).forEach((b) => (b.onclick = async () => {
+    try {
+      await api("DELETE", `/api/personal/${pid}/despachos-extra/${b.dataset.quitar}`);
+      toast("Juzgado quitado.");
+      await refrescarCatalogos();
+      formJuzgados(pid);
+    } catch (e) { mostrarError(e); }
+  }));
+}
+
 async function equipoDespacho(did) {
   let ps;
   try { ps = await api("GET", "/api/personal"); } catch (e) { return mostrarError(e); }
@@ -1333,7 +1390,9 @@ async function equipoDespacho(did) {
   const equipo = ps.filter((p) => p.despacho_id === did)
     .sort((a, b) => orden(a.cargo_codigo) - orden(b.cargo_codigo) || String(a.secretaria || "~").localeCompare(String(b.secretaria || "~"))
                     || a.nombre_completo.localeCompare(b.nombre_completo));
-  const jueces = equipo.filter((p) => p.cargo_codigo === "JUEZ" && p.activo);
+  // Quienes son titulares de este despacho sin ser su despacho principal
+  const extrasAqui = ps.filter((p) => p.activo && extrasDe(p).some((e) => e.id === did));
+  const jueces = [...equipo, ...extrasAqui].filter((p) => p.cargo_codigo === "JUEZ" && p.activo);
   // Si el despacho ya tiene juez titular, no se ofrecen jueces para "agregar" (evita mover al juez por error)
   const otros = ps.filter((p) => p.despacho_id !== did && p.activo && !(jueces.length && p.cargo_codigo === "JUEZ"));
   const srias = SRIAS;
@@ -1346,14 +1405,21 @@ async function equipoDespacho(did) {
     const xs = otros.filter((p) => p.cargo_codigo === c.codigo);
     return xs.length ? `<optgroup label="${esc(c.nombre)}">${xs.map((p) => `<option value="${p.id}">${esc(p.nombre_completo)} — hoy en ${esc(conTurno(p.despacho, p.turno))}</option>`).join("")}</optgroup>` : "";
   }).join("");
+  const opcionesExtra = E.cat.cargos.filter((c) => MULTIDESPACHO.includes(c.codigo)).map((c) => {
+    const xs = ps.filter((p) => p.activo && p.cargo_codigo === c.codigo && p.despacho_id !== did
+      && !extrasDe(p).some((e) => e.id === did) && !(c.codigo === "JUEZ" && jueces.length));
+    return xs.length ? `<optgroup label="${esc(c.nombre)}">${xs.map((p) => `<option value="${p.id}">${esc(p.nombre_completo)} — hoy en ${esc(despachosDe(p))}</option>`).join("")}</optgroup>` : "";
+  }).join("");
   const html = `<datalist id="dl-srias">${SRIAS.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
     <p><b>${esc(conTurno(d.nombre, d.turno))}</b> · ${esc(d.fuero)} · ${esc(d.localidad)}</p>
     <p>${jueces.length ? `Juez titular: <b>${jueces.map((j) => esc(j.nombre_completo)).join(", ")}</b>` : `<b style="color:var(--sin-cubrir)">⚠ Este despacho todavía no tiene juez titular.</b>`}
       · Secretarías: <b>${secretarias.length ? secretarias.map((x) => "Nº " + esc(x).replace(/^Nº\s*/, "")).join(", ") : "ninguna asignada"}</b></p>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Cargo</th><th>Funcionario</th><th>Secretaría</th><th></th></tr></thead><tbody>
-    ${equipo.map((p) => `<tr class="${p.activo ? "" : "inactivo"}"><td>${esc(p.cargo)}</td><td>${esc(p.nombre_completo)}${p.activo ? "" : " (dado de baja)"}</td>
+    ${equipo.map((p) => `<tr class="${p.activo ? "" : "inactivo"}"><td>${esc(p.cargo)}</td><td>${esc(p.nombre_completo)}${p.activo ? "" : " (dado de baja)"}${extrasDe(p).length ? `<br><span class="ayuda">titular también de: ${extrasDe(p).map((e) => esc(conTurno(e.nombre, e.turno))).join(" · ")}</span>` : ""}</td>
       <td>${["ACTUARIO", "SECRETARIO"].includes(p.cargo_codigo) || p.secretaria ? selSria(p.secretaria, `data-sria="${p.id}"`) : "—"}</td><td><button class="btn chico" data-editar="${p.id}">Editar</button></td></tr>`).join("")
-      || `<tr><td colspan="4" class="ayuda">Todavía no hay funcionarios en este despacho.</td></tr>`}
+      || (extrasAqui.length ? "" : `<tr><td colspan="4" class="ayuda">Todavía no hay funcionarios en este despacho.</td></tr>`)}
+    ${extrasAqui.map((p) => `<tr><td>${esc(p.cargo)}</td><td>${esc(p.nombre_completo)}<br><span class="ayuda">titular también · su despacho principal es ${esc(conTurno(p.despacho, p.turno))}</span></td><td>—</td>
+      <td><button class="btn chico peligro" data-quitar-extra="${p.id}">Quitar de aquí</button></td></tr>`).join("")}
     ${vacs.map((v) => `<tr><td>${esc(v.cargo)}</td><td><i>⚪ Puesto vacante</i></td><td>${v.secretaria ? "Sria. " + esc(v.secretaria) : "—"}</td><td></td></tr>`).join("")}
     </tbody></table></div>
     ${jueces.length ? "" : `<div class="aviso-eq"><b>¿Un juez de otro juzgado lo atiende de forma provisoria?</b><br>
@@ -1361,7 +1427,12 @@ async function equipoDespacho(did) {
       <div style="margin-top:8px"><button class="btn primario" id="eq-cubrir">Cubrir provisoriamente…</button></div>
       <span class="ayuda">Registra este puesto de Juez como vacante y asigna a quien lo cubre. Nadie cambia de despacho: el juez sigue siendo titular de su juzgado y figura además cubriendo este.</span></div>
       <p class="ayuda" style="margin-top:10px">Use «Agregar» solo para designar a un juez <b>titular</b> definitivo de este despacho.</p>`}
-    <h3 style="margin:16px 0 6px;font-size:14px">Agregar al equipo</h3>
+    <h3 style="margin:16px 0 6px;font-size:14px">Titular de más de un juzgado</h3>
+    <div class="fila-campos"><select id="eq-extra" style="flex:1;min-width:240px"><option value="">— Elija un juez, actuario/a o secretario/a —</option>${opcionesExtra}</select>
+      <button class="btn primario" id="eq-extra-ok">Asignar también aquí</button></div>
+    <p class="ayuda">Para quien tiene <b>dos o más juzgados</b> a su cargo. <b>No cambia de despacho</b>: sigue en el suyo y además figura como titular de este.
+      Si se ausenta, un solo interino cubre todos sus juzgados.${jueces.length ? " No se ofrecen jueces porque este despacho ya tiene juez titular." : ""}</p>
+    <h3 style="margin:16px 0 6px;font-size:14px">Agregar al equipo (cambio definitivo de despacho)</h3>
     <div class="fila-campos"><select id="eq-persona" style="flex:1;min-width:240px"><option value="">— Elija un funcionario de otro despacho —</option>${opcionesOtros}</select>
       ${selSria("", 'id="eq-sria"')}<button class="btn primario" id="eq-agregar">Agregar</button></div>
     <p class="ayuda">Así se asignan las secretarias al juez: elija a cada una, póngale su Secretaría (Nº 1, Nº 2… o escriba otra) y pulse «Agregar».
@@ -1409,6 +1480,24 @@ async function equipoDespacho(did) {
     try { await guardarPersona(p, { despacho_id: did, secretaria: $("#eq-sria", cuerpo).value.trim() || null }, `${p.nombre_completo} se agregó al equipo.`); }
     catch (e) { mostrarError(e); }
   };
+  $("#eq-extra-ok", cuerpo).onclick = async () => {
+    const p = ps.find((x) => x.id === +$("#eq-extra", cuerpo).value);
+    if (!p) return toast("Elija un funcionario.");
+    try {
+      await api("POST", `/api/personal/${p.id}/despachos-extra`, { despacho_id: did });
+      toast(`${p.nombre_completo} figura ahora como titular también de este despacho.`);
+      await refrescarCatalogos();
+      equipoDespacho(did);
+    } catch (e) { mostrarError(e); }
+  };
+  $$("[data-quitar-extra]", cuerpo).forEach((b) => (b.onclick = async () => {
+    try {
+      await api("DELETE", `/api/personal/${b.dataset.quitarExtra}/despachos-extra/${did}`);
+      toast("Quitado de este despacho.");
+      await refrescarCatalogos();
+      equipoDespacho(did);
+    } catch (e) { mostrarError(e); }
+  }));
   const btnCubrir = $("#eq-cubrir", cuerpo);
   if (btnCubrir) btnCubrir.onclick = async () => {
     const ok = await confirmar("Cubrir provisoriamente", `<p>Se registra el puesto de <b>Juez</b> de <b>${esc(conTurno(d.nombre, d.turno))}</b>

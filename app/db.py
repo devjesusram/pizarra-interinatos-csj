@@ -286,6 +286,16 @@ MIGRACIONES = [
                vinculado_obs = 'Registro anterior a la vinculación manual'
          WHERE estado <> 'ANULADO';
     """),
+    (7, "Funcionarios titulares de más de un despacho", """
+        CREATE TABLE personal_despachos (
+          personal_id INTEGER NOT NULL REFERENCES personal(id) ON DELETE CASCADE,
+          despacho_id INTEGER NOT NULL REFERENCES despachos(id),
+          creado_por  INTEGER REFERENCES usuarios(id),
+          creado_en   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          PRIMARY KEY (personal_id, despacho_id)
+        );
+        CREATE INDEX idx_personal_despachos_despacho ON personal_despachos(despacho_id);
+    """),
 ]
 VERSION_ACTUAL = MIGRACIONES[-1][0]
 

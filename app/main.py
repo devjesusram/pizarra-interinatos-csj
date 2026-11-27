@@ -241,7 +241,25 @@ SQL_PERSONAL = """SELECT p.id, p.nombre_completo, p.cargo_codigo, p.despacho_id,
 
 
 SQL_REGISTROS_DESPACHO = """(SELECT count(*) FROM personal p WHERE p.despacho_id = d.id)
+                            + (SELECT count(*) FROM personal_despachos x WHERE x.despacho_id = d.id)
                             + (SELECT count(*) FROM vacantes v WHERE v.despacho_id = d.id)"""
+
+# Cargos que pueden ser titulares de más de un despacho (los ujieres atienden uno solo)
+CARGOS_MULTIDESPACHO = ("JUEZ", "ACTUARIO", "SECRETARIO")
+
+
+def _con_extras(conn, filas):
+    """Agrega a cada funcionario 'despachos_extra': los otros despachos de los que también es titular."""
+    extra: dict[int, list[dict]] = {}
+    for r in todos(conn, """SELECT x.personal_id, d.id AS despacho_id, d.nombre, d.turno, d.fuero, d.localidad
+                            FROM personal_despachos x JOIN despachos d ON d.id = x.despacho_id
+                            ORDER BY d.nombre, d.turno"""):
+        extra.setdefault(r["personal_id"], []).append(
+            {"id": r["despacho_id"], "nombre": r["nombre"], "turno": r["turno"],
+             "fuero": r["fuero"], "localidad": r["localidad"]})
+    for f in filas:
+        f["despachos_extra"] = extra.get(f["id"], [])
+    return filas
 # Todo cambio de un usuario queda en la auditoría; además se cuentan las firmas en los registros.
 SQL_REGISTROS_USUARIO = """(SELECT count(*) FROM auditoria a WHERE a.usuario_id = u.id)
     + (SELECT count(*) FROM licencias l WHERE u.id IN (l.creado_por, l.modificado_por))
@@ -300,7 +318,59 @@ def listar_personal(u=Depends(usuario_actual)):
     with db.conexion() as conn:
         filas = todos(conn, SQL_PERSONAL.replace("SELECT p.id,", f"SELECT ({SQL_REGISTROS_PERSONA}) AS registros, p.id,", 1)
                       + " ORDER BY c.orden_pizarra, p.nombre_completo")
-        return booleanos(filas, "activo")
+        return _con_extras(conn, booleanos(filas, "activo"))
+
+
+class DespachoExtraIn(BaseModel):
+    despacho_id: int
+
+
+@app.post("/api/personal/{pid}/despachos-extra", status_code=201)
+def agregar_despacho_extra(pid: int, body: DespachoExtraIn, u=Depends(requiere_admin)):
+    """Hace a un funcionario titular de un despacho más, SIN sacarlo del suyo."""
+    with db.conexion() as conn, escritura(conn):
+        p = uno(conn, "SELECT id, nombre_completo, cargo_codigo, despacho_id FROM personal WHERE id = ?", (pid,))
+        if not p:
+            raise HTTPException(404, "Funcionario inexistente")
+        if p["cargo_codigo"] not in CARGOS_MULTIDESPACHO:
+            raise HTTPException(409, "Los ujieres atienden un solo despacho.")
+        d = uno(conn, "SELECT id, nombre, turno, activo FROM despachos WHERE id = ?", (body.despacho_id,))
+        if not d:
+            raise HTTPException(404, "Despacho inexistente")
+        if not d["activo"]:
+            raise HTTPException(409, "Ese despacho está desactivado.")
+        if d["id"] == p["despacho_id"]:
+            raise HTTPException(409, f"{p['nombre_completo']} ya pertenece a ese despacho.")
+        if uno(conn, "SELECT 1 AS x FROM personal_despachos WHERE personal_id = ? AND despacho_id = ?", (pid, d["id"])):
+            raise HTTPException(409, f"{p['nombre_completo']} ya figura como titular de ese despacho.")
+        if p["cargo_codigo"] == "JUEZ":
+            otro = uno(conn, """SELECT j.nombre_completo FROM personal j
+                                WHERE j.cargo_codigo = 'JUEZ' AND j.activo = 1 AND j.id <> :pid
+                                  AND (j.despacho_id = :did
+                                       OR EXISTS (SELECT 1 FROM personal_despachos x
+                                                  WHERE x.personal_id = j.id AND x.despacho_id = :did))""",
+                       {"pid": pid, "did": d["id"]})
+            if otro:
+                raise HTTPException(409, f"Ese despacho ya tiene juez titular: {otro['nombre_completo']}.")
+        conn.execute("INSERT INTO personal_despachos (personal_id, despacho_id, creado_por) VALUES (?, ?, ?)",
+                     (pid, d["id"], u["id"]))
+        servicios.auditar(conn, "personal", pid, "AGREGAR_DESPACHO",
+                          {"despacho_id": d["id"], "despacho": d["nombre"], "turno": d["turno"]}, u["id"])
+    return {"ok": True}
+
+
+@app.delete("/api/personal/{pid}/despachos-extra/{did}")
+def quitar_despacho_extra(pid: int, did: int, u=Depends(requiere_admin)):
+    """Deja de ser titular de ese despacho adicional (su despacho principal no cambia)."""
+    with db.conexion() as conn, escritura(conn):
+        r = uno(conn, """SELECT d.nombre, d.turno FROM personal_despachos x JOIN despachos d ON d.id = x.despacho_id
+                         WHERE x.personal_id = ? AND x.despacho_id = ?""", (pid, did))
+        if not r:
+            raise HTTPException(404, "Ese despacho no figura entre los adicionales del funcionario.")
+        conn.execute("DELETE FROM personal_despachos WHERE personal_id = ? AND despacho_id = ?", (pid, did))
+        servicios.auditar(conn, "personal", pid, "QUITAR_DESPACHO",
+                          {"despacho_id": did, "despacho": r["nombre"], "turno": r["turno"]}, u["id"])
+    return {"ok": True}
 
 
 @app.delete("/api/personal/{pid}")
@@ -354,10 +424,16 @@ def crear_personal(body: PersonalIn, u=Depends(requiere_admin)):
 @app.put("/api/personal/{pid}")
 def editar_personal(pid: int, body: PersonalIn, u=Depends(requiere_admin)):
     with db.conexion() as conn:
-        return _guardar(conn, """UPDATE personal SET nombre_completo = :nombre_completo,
+        r = _guardar(conn, """UPDATE personal SET nombre_completo = :nombre_completo,
                                    cargo_codigo = :cargo_codigo, despacho_id = :despacho_id,
                                    secretaria = :secretaria, email = :email, activo = :activo WHERE id = :id""",
-                        _bool01({**body.model_dump(), "id": pid}), "personal", "MODIFICAR", u["id"], pid)
+                     _bool01({**body.model_dump(), "id": pid}), "personal", "MODIFICAR", u["id"], pid)
+        # Si pasa a ser su despacho principal, o deja de ser un cargo multidespacho, ya no es «adicional»
+        with escritura(conn):
+            conn.execute("""DELETE FROM personal_despachos WHERE personal_id = ?
+                              AND (despacho_id = ? OR ? NOT IN ('JUEZ', 'ACTUARIO', 'SECRETARIO'))""",
+                         (pid, body.despacho_id, body.cargo_codigo))
+        return r
 
 
 @app.post("/api/despachos", status_code=201)
@@ -548,7 +624,7 @@ def pizarra(desde: date, hasta: date, u=Depends(usuario_actual)):
     _rango(desde, hasta)
     p = {"desde": iso(desde), "hasta": iso(hasta)}
     with db.conexion() as conn:
-        personal = booleanos(todos(conn, SQL_PERSONAL + " WHERE p.activo = 1 ORDER BY c.orden_pizarra, p.nombre_completo"), "activo")
+        personal = _con_extras(conn, booleanos(todos(conn, SQL_PERSONAL + " WHERE p.activo = 1 ORDER BY c.orden_pizarra, p.nombre_completo"), "activo"))
         licencias = booleanos(todos(conn, """
             SELECT l.id, l.personal_id, l.tipo_licencia_id, t.nombre AS tipo, l.fecha_inicio, l.fecha_fin,
                    l.organo_aprobador, l.nro_resolucion, l.adjunto_nombre IS NOT NULL AS tiene_adjunto,
@@ -600,6 +676,10 @@ def disponibilidad(desde: date, hasta: date, titular_id: Optional[int] = None,
             tit = uno(conn, SQL_PERSONAL + " WHERE p.id = ?", (titular_id,))
         if not tit:
             raise HTTPException(404, "Titular o puesto vacante inexistente")
+        # despachos del titular: el principal y los adicionales (para sugerir primero a los compañeros)
+        despachos_tit = {tit["despacho_id"]} | ({r["despacho_id"] for r in todos(
+            conn, "SELECT despacho_id FROM personal_despachos WHERE personal_id = ?", (titular_id,))}
+            if vacante_id is None else set())
         candidatos = []
         for c in todos(conn, SQL_PERSONAL + " WHERE p.activo = 1 AND p.cargo_codigo = ? AND p.id <> ?",
                        (tit["cargo_codigo"], titular_id or 0)):
@@ -615,7 +695,7 @@ def disponibilidad(desde: date, hasta: date, titular_id: Optional[int] = None,
             candidatos.append({"id": c["id"], "nombre_completo": c["nombre_completo"],
                                "despacho": c["despacho"], "turno": c["turno"], "localidad": c["localidad"],
                                "secretaria": c["secretaria"],
-                               "mismo_despacho": c["despacho_id"] == tit["despacho_id"],
+                               "mismo_despacho": c["despacho_id"] in despachos_tit,
                                "estado": estado, "hallazgos": [h.a_dict() for h in propios]})
         # Primero los disponibles; entre ellos, los compañeros del mismo despacho (turno)
         # y después los de la misma localidad
