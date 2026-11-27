@@ -120,6 +120,16 @@
         <tr><td>⚠ Falta desvincular (correspondía el …)</td><td>Rojo</td><td>Pasó el día de Desvincular y nadie registró la desvinculación: <b>sigue en el tablero</b> hasta que alguien la confirme</td></tr>
         <tr><td>✔ Desvinculado el … por (usuario)</td><td>Gris punteado</td><td>Terminado y confirmado. Se ve eligiendo «Mostrar: Desvinculados»</td></tr>
       </table>
+      <h3>Vincular (confirmar que el interino asumió)</h3>
+      <p>Cuando el interino empieza a cubrir, alguien lo confirma con el botón <b>Vincular…</b>, y queda registrado <b>quién</b> lo hizo y <b>cuándo</b>. Es la contraparte de Desvincular. Mientras nadie lo confirma, el recuadro muestra <b>«⏳ Falta vincular (confirmar que asumió)»</b> y el resumen del tablero cuenta cuántos faltan.</p>
+      <ol>
+        <li>Haga clic en el recuadro: se abre el detalle.</li>
+        <li>Pulse <b>Vincular…</b>.</li>
+        <li>Revise la <b>fecha de vinculación</b> (por defecto hoy; no puede ser futura ni posterior al último día) y, si quiere, escriba una <b>observación</b> (por ejemplo, «notificado por teléfono»).</li>
+        <li>Pulse <b>Vincular</b>.</li>
+      </ol>
+      <p>El recuadro pasa a <b>«✔ Vinculado el … por (su usuario)»</b>, el detalle muestra la fila <b>Vinculación</b> y en <b>Administración → Auditoría</b> figura la acción <b>VINCULAR</b>. No cambia las fechas del interinazgo y no se puede vincular dos veces. Si después se <b>Edita</b> el interinazgo y se elige <b>otro interino</b>, la vinculación se borra y hay que confirmar la del nuevo. Los interinazgos cargados antes de esta versión figuran como «registro anterior».</p>
+      <figure><img src="/static/manual/25-vincular.png" alt="Ventana Vincular con fecha y observación" loading="lazy" style="max-width:640px"><figcaption>Vincular: fecha y observación; queda registrado con su usuario.</figcaption></figure>
       <h3>Desvincular (dar por terminado)</h3>
       <p>La desvinculación es una <b>acción manual</b>: alguien tiene que confirmarla, y queda registrado <b>quién</b> lo hizo y <b>cuándo</b>.</p>
       <ol>
@@ -131,7 +141,7 @@
       <p>El recuadro pasa a <b>«✔ Desvinculado el … por (su usuario)»</b> y sale de la vista habitual (queda en «Mostrar: Desvinculados»). En <b>Administración → Auditoría</b> figura la acción <b>DESVINCULAR</b> con el usuario, la fecha, la hora y la observación. Nada se borra.</p>
       <p><b>Ejemplo:</b> una licencia del 01/12 al 05/12. Se anota el interinazgo con <b>Fecha</b> 01/12 y <b>Hasta</b> 05/12; el interino cubre el 05/12 completo y el recuadro dice <b>DESVINCULAR 06/12</b>. El 06/12 aparece <b>«⚠ Desvincular HOY»</b> y se registra la desvinculación con fecha 06/12. No se puede desvincular el mismo día del inicio (si nunca llegó a cubrir, use <b>Anular</b>) ni con fecha futura.</p>
       <p>La fecha de <b>Desvincular</b> que se anota al crear el recuadro es la <b>prevista</b>: cuando llega, el recuadro se pone en ámbar y, si pasa sin que nadie lo confirme, en <b>rojo</b>. Para cambiar la fecha prevista (por ejemplo, una prórroga), use <b>Editar</b>.</p>
-      <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar y Desvincular….</figcaption></figure>
+      <figure><img src="/static/manual/22-detalle-interinazgo.png" alt="Detalle de un interinazgo con el botón Desvincular" loading="lazy" style="max-width:720px"><figcaption>Detalle de un interinazgo: Anular, Editar, Vincular… y Desvincular…. La fila Vinculación avisa si falta confirmar.</figcaption></figure>
       <figure><img src="/static/manual/24-desvincular.png" alt="Ventana Desvincular con fecha y observación" loading="lazy" style="max-width:640px"><figcaption>Desvincular: fecha y observación; queda registrado con su usuario.</figcaption></figure>
       <h3>Actualización automática (varios usuarios a la vez)</h3>
       <p>No hace falta pulsar <b>F5</b>. Cada <b>15 segundos</b> la Pizarra consulta al servidor y, si otro usuario desvinculó, anotó o cambió algo, el tablero y el calendario se redibujan solos. También se pone al día al volver a la pestaña o al cerrar una ventana.</p>

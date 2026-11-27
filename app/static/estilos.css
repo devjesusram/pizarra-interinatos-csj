@@ -241,6 +241,9 @@ textarea { width: 100%; min-height: 60px; resize: vertical; }
 .recuadro dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .r-auto { font-weight: 400; color: var(--texto-suave); font-style: italic; }
 .r-estado { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 3px 8px; margin: -2px 0 10px; display: inline-block; }
+.r-vinc { font-size: 12px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--borde); }
+.r-vinc.ok { color: var(--cubierto); }
+.r-vinc.falta { color: #7a4a00; font-weight: 600; }
 .r-vigente { border-color: #a9d5ac; } .r-vigente .r-estado { background: var(--cubierto-fondo); color: var(--cubierto); }
 .r-por-vencer { border-color: var(--sin-cubrir); background: #fffaf0; } .r-por-vencer .r-estado { background: var(--sin-cubrir-fondo); color: #7a4a00; }
 .r-proximo { border-color: #9cbfe8; } .r-proximo .r-estado { background: var(--interino-fondo); color: var(--interino); }

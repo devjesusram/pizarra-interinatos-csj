@@ -214,11 +214,12 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
                       confirmar_advertencias: bool = False) -> list[Hallazgo]:
     datos = _datos_interinato(d)
     with escritura(conn):
-        actual = uno(conn, "SELECT estado FROM interinatos WHERE id = ?", (int_id,))
+        actual = uno(conn, "SELECT estado, interino_id FROM interinatos WHERE id = ?", (int_id,))
         if not actual:
             raise LookupError("Interinato inexistente")
         if actual["estado"] == "ANULADO":
             raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "E1", "No se puede editar un interinato anulado.")])
+        cambia_interino = actual["interino_id"] != datos["interino_id"]
         bloqueos, avisos, infos = _separar(validar_interinato(
             conn, datos["titular_id"], datos["interino_id"], datos["fecha_inicio"],
             datos["fecha_fin"], excluir_id=int_id, vacante_id=datos["vacante_id"]))
@@ -230,13 +231,19 @@ def editar_interinato(conn, int_id: int, d: dict, version: int, usuario_id: int,
             # Si pasó la validación (R4), deja de estar en conflicto
             cur = conn.execute(f"""UPDATE interinatos SET {', '.join(c + ' = :' + c for c in CAMPOS_INTERINATO)},
                                           cargo_codigo = :cargo, estado = 'VIGENTE', version = version + 1,
+                                          -- si cambia la persona, la vinculación anterior ya no vale
+                                          vinculado = CASE WHEN :cambia THEN 0 ELSE vinculado END,
+                                          vinculado_fecha = CASE WHEN :cambia THEN NULL ELSE vinculado_fecha END,
+                                          vinculado_por = CASE WHEN :cambia THEN NULL ELSE vinculado_por END,
+                                          vinculado_en = CASE WHEN :cambia THEN NULL ELSE vinculado_en END,
+                                          vinculado_obs = CASE WHEN :cambia THEN NULL ELSE vinculado_obs END,
                                           desvinculado = CASE WHEN :fecha_fin >= :hoy THEN 0 ELSE desvinculado END,   -- el último día es hoy o después: todavía no se desvinculó
                                           desvinculado_por = CASE WHEN :fecha_fin >= :hoy THEN NULL ELSE desvinculado_por END,
                                           desvinculado_en = CASE WHEN :fecha_fin >= :hoy THEN NULL ELSE desvinculado_en END,
                                           modificado_por = :u, modificado_en = :ahora
                                    WHERE id = :id AND version = :v""",
                                {**datos, "cargo": _cargo_cubierto(conn, datos), "u": usuario_id,
-                                "id": int_id, "v": version, "ahora": ahora_utc(),
+                                "id": int_id, "v": version, "ahora": ahora_utc(), "cambia": int(cambia_interino),
                                 "hoy": iso(datetime.now(config.ZONA).date())})
         except sqlite3.IntegrityError as e:
             raise traducir_error_bd(e)
@@ -276,6 +283,36 @@ def desvincular_interinato(conn, int_id: int, fecha, observacion: str | None, ve
             raise ConflictoVersion(_quien_modifico(conn, "interinatos", int_id))
         auditar(conn, "interinatos", int_id, "DESVINCULAR",
                 {"fecha_desvinculacion": iso(fecha), "ultimo_dia": iso(ultimo), "observacion": observacion}, usuario_id)
+
+
+def vincular_interinato(conn, int_id: int, fecha, observacion: str | None, version: int,
+                        usuario_id: int, hoy: date) -> None:
+    """Acción manual: confirma que el interino asumió y registra quién lo hizo y cuándo.
+    No cambia las fechas del interinazgo; 'fecha' es el día en que quedó vinculado."""
+    fecha = a_fecha(fecha)
+    with escritura(conn):
+        i = uno(conn, "SELECT fecha_inicio, fecha_fin, estado, vinculado FROM interinatos WHERE id = ?", (int_id,))
+        if not i:
+            raise LookupError("Interinazgo inexistente")
+        if i["estado"] == "ANULADO":
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "E1", "No se puede vincular un interinazgo anulado.")])
+        if i["vinculado"]:
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "V1", "Este interino ya figura como vinculado.")])
+        if fecha > hoy:
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "V2", "La fecha de vinculación no puede ser posterior a hoy.")])
+        if fecha > a_fecha(i["fecha_fin"]):
+            raise Bloqueado([Hallazgo(Nivel.BLOQUEO, "V3", f"La vinculación no puede ser posterior al último día del "
+                                                           f"interinazgo ({f(i['fecha_fin'])}).")])
+        cur = conn.execute("""UPDATE interinatos SET vinculado = 1, vinculado_fecha = ?, vinculado_por = ?,
+                                     vinculado_en = ?, vinculado_obs = ?, version = version + 1,
+                                     modificado_por = ?, modificado_en = ?
+                              WHERE id = ? AND version = ?""",
+                           (iso(fecha), usuario_id, ahora_utc(), (observacion or "").strip() or None,
+                            usuario_id, ahora_utc(), int_id, version))
+        if cur.rowcount == 0:
+            raise ConflictoVersion(_quien_modifico(conn, "interinatos", int_id))
+        auditar(conn, "interinatos", int_id, "VINCULAR",
+                {"fecha_vinculacion": iso(fecha), "observacion": observacion}, usuario_id)
 
 
 def anular_interinato(conn, int_id: int, motivo: str, version: int, usuario_id: int) -> None:

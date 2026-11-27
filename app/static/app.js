@@ -265,6 +265,15 @@ const PLURAL = { JUEZ: "Jueces", ACTUARIO: "Actuarios/as Judiciales", SECRETARIO
 /** El interino cubre las 24 horas de su último día (fecha_fin) y se lo desvincula al día siguiente. */
 const diaDesvincular = (fin) => (!fin || fin === SIN_FIN ? null : sumar(fin, 1));
 
+/** Línea de vinculación del recuadro: quién confirmó que el interino asumió (o que falta). */
+function lineaVinculo(i, hoy) {
+  if (i.estado === "ANULADO" || i.desvinculado) return "";
+  if (i.vinculado) {
+    return i.vinculado_por_nombre ? `<div class="r-vinc ok">✔ Vinculado el ${fmt(i.vinculado_fecha)} por ${esc(i.vinculado_por_nombre)}</div>` : "";
+  }
+  return i.fecha_inicio <= hoy ? `<div class="r-vinc falta">⏳ Falta vincular (confirmar que asumió)</div>` : "";
+}
+
 function estadoRecuadro(i, hoy) {
   const dias = (iso) => difDias(hoy, iso);
   const desv = diaDesvincular(i.fecha_fin);
@@ -302,6 +311,7 @@ function dibujarTablero() {
     .sort((a, b) => orden[a.e.clase] - orden[b.e.clase] || (a.i.fecha_inicio < b.i.fecha_inicio ? -1 : 1)) }))
     .filter((g) => g.xs.length);
   const cuenta = (cl) => filas.filter((f) => f.e.clase === cl).length;
+  const sinVincular = filas.filter((f) => lineaVinculo(f.i, hoy).includes("falta")).length;
   const recuadro = ({ i, e }) => `<div class="recuadro r-${e.clase}" data-int="${i.id}" tabindex="0" role="button" title="Ver, editar o desvincular">
       <div class="r-estado">${esc(e.texto)}</div>
       <dl>
@@ -310,10 +320,10 @@ function dibujarTablero() {
         <dt>FECHA</dt><dd>${fmt(i.fecha_inicio)}</dd>
         <dt>DESPACHO</dt><dd>${i.despacho_texto ? esc(i.despacho_texto) : `<span class="r-auto">${esc(i.despacho_titular)}</span>`}</dd>
         <dt>DESVINCULAR</dt><dd>${i.fecha_fin === SIN_FIN ? '<span class="r-auto">— (sin fecha)</span>' : `${fmt(diaDesvincular(i.fecha_fin))} <span class="r-auto">· cubre hasta el ${fmtCorto(i.fecha_fin)}</span>`}</dd>
-      </dl></div>`;
+      </dl>${lineaVinculo(i, hoy)}</div>`;
   tab.innerHTML = `<div class="pizarra-acrilica">
     <h2 class="p-titulo">INTERINAZGOS JUZGADOS ${t.anio}</h2>
-    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("pendiente") ? ` · <b class="c-rojo">${cuenta("pendiente")} sin desvincular</b>` : ""}${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan hoy o en los próximos 3 días</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
+    <p class="p-resumen">${filas.length} recuadro(s)${cuenta("pendiente") ? ` · <b class="c-rojo">${cuenta("pendiente")} sin desvincular</b>` : ""}${cuenta("por-vencer") ? ` · <b class="c-ambar">${cuenta("por-vencer")} se desvinculan hoy o en los próximos 3 días</b>` : ""}${cuenta("conflicto") ? ` · <b class="c-violeta">${cuenta("conflicto")} en conflicto</b>` : ""}${sinVincular ? ` · <b class="c-ambar">${sinVincular} sin vincular</b>` : ""}${cuenta("proximo") ? ` · ${cuenta("proximo")} por empezar` : ""}</p>
     ${grupos.map((g) => `<h3 class="p-grupo">${esc(PLURAL[g.c.codigo] || g.c.nombre)}</h3>
       <div class="recuadros">${g.xs.map(recuadro).join("")}</div>`).join("")
       || `<div class="vacio">No hay interinazgos ${ver === "desvinculados" ? "desvinculados" : "vigentes"} para mostrar en ${t.anio}.<br>
@@ -1010,6 +1020,8 @@ async function verInterinato(id) {
     <dt>Hasta</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(i.fecha_fin) + " (último día, las 24 horas)"}</dd>
     <dt>Desvincular</dt><dd>${i.fecha_fin === "9999-12-31" ? "<i>sin fecha todavía</i>" : fmt(diaDesvincular(i.fecha_fin))}</dd>
     <dt>Despacho</dt><dd>${esc(i.despacho_texto || "—")}</dd>
+    ${i.vinculado ? `<dt>Vinculación</dt><dd>✔ El ${fmt(i.vinculado_fecha)}${i.vinculado_por_nombre ? `, por <b>${esc(i.vinculado_por_nombre)}</b> (registrado el ${fmtHora(i.vinculado_en)})` : " (registro anterior)"}${i.vinculado_obs && i.vinculado_por_nombre ? `<br><span class="ayuda">${esc(i.vinculado_obs)}</span>` : ""}</dd>`
+      : i.estado !== "ANULADO" && i.fecha_inicio <= E.hoy ? `<dt>Vinculación</dt><dd><b style="color:var(--sin-cubrir)">⏳ Pendiente: nadie confirmó todavía que el interino asumió</b></dd>` : ""}
     ${i.desvinculado ? `<dt>Desvinculación</dt><dd>✔ El ${fmt(diaDesvincular(i.fecha_fin))}${i.desvinculado_por_nombre ? `, por <b>${esc(i.desvinculado_por_nombre)}</b> (registrado el ${fmtHora(i.desvinculado_en)})` : " (registro anterior)"}${i.desvinculado_obs ? `<br><span class="ayuda">${esc(i.desvinculado_obs)}</span>` : ""}</dd>`
       : i.fecha_fin !== "9999-12-31" && i.fecha_fin < E.hoy ? `<dt>Desvinculación</dt><dd><b style="color:var(--licencia)">⚠ Pendiente: correspondía el ${fmt(diaDesvincular(i.fecha_fin))} y nadie la confirmó</b></dd>` : ""}
     <dt>Acto de designación</dt><dd>${esc(i.acto_designacion || "—")}</dd>
@@ -1021,11 +1033,42 @@ async function verInterinato(id) {
   if (i.estado !== "ANULADO") {
     pie.unshift({ texto: "Anular", clase: "peligro", accion: () => anular("interinatos", i) });
     pie.push({ texto: "Editar", clase: "primario", accion: () => { setTimeout(() => formInterinato({}, i), 0); } });
+    if (!i.vinculado && !i.desvinculado) {
+      pie.push({ texto: "Vincular…", clase: "primario", accion: () => { formVincular(i); return false; } });
+    }
     if (!i.desvinculado && i.fecha_inicio < E.hoy) {   // se desvincula desde el día siguiente al inicio
       pie.push({ texto: "Desvincular…", clase: "primario", accion: () => { formDesvincular(i); return false; } });
     }
   }
   modal($("#modal"), { titulo: `Interinazgo #${i.id}`, cuerpo: html, pie });
+}
+
+/** Acción manual de vinculación: queda en la auditoría con el usuario que la hace. */
+function formVincular(i) {
+  const tope = i.fecha_fin !== SIN_FIN && i.fecha_fin < E.hoy ? i.fecha_fin : E.hoy;
+  const html = `<p>Confirma que <b>${esc(i.interino)}</b> asumió el interinazgo cubriendo a <b>${esc(i.titular || "un puesto vacante")}</b>.</p>
+    <form class="form" id="f-vinc">
+      <label class="req" for="v-fecha">Fecha de vinculación</label>
+      <div class="fila-campos"><input type="date" id="v-fecha" required value="${tope}" max="${tope}">
+        <span class="ayuda">día en que asumió (el interinazgo empieza el ${fmt(i.fecha_inicio)})</span></div>
+      <label for="v-obs">Observación</label>
+      <input type="text" id="v-obs" maxlength="500" placeholder="Opcional, por ejemplo: notificado por teléfono">
+    </form>
+    <p class="ayuda">Queda registrado en la auditoría con su usuario (${esc(E.yo.nombre)}), la fecha y la hora.</p>`;
+  const { cuerpo } = modal($("#modal2"), { titulo: "Vincular", cuerpo: html, pie: [
+    { texto: "Cancelar" },
+    { texto: "Vincular", clase: "primario", accion: async () => {
+      const f = $("#f-vinc", cuerpo);
+      if (!f.reportValidity()) return false;
+      try {
+        await api("POST", `/api/interinatos/${i.id}/vincular`, { fecha: $("#v-fecha", f).value,
+          observacion: $("#v-obs", f).value, version: i.version });
+        $("#modal").close();
+        toast(`${i.interino} vinculado.`);
+        await recargar();
+      } catch (e) { $("#modal2").close(); mostrarError(e); return false; }
+    } },
+  ] });
 }
 
 /** Acción manual de desvinculación: queda en la auditoría con el usuario que la hace. */

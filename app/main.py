@@ -112,6 +112,12 @@ class DesvincularIn(BaseModel):
     version: int
 
 
+class VincularIn(BaseModel):
+    fecha: Optional[date] = None            # por defecto, hoy
+    observacion: Optional[str] = Field(default=None, max_length=500)
+    version: int
+
+
 class LoginIn(BaseModel):
     usuario: str
     clave: str
@@ -524,6 +530,8 @@ SQL_INTERINATOS_PIZARRA = """
            i.estado, i.version, i.despacho_texto, i.cargo_codigo, x.nombre_completo AS interino,
            i.desvinculado, i.desvinculado_en, i.desvinculado_obs,
            (SELECT nombre FROM usuarios WHERE id = i.desvinculado_por) AS desvinculado_por_nombre,
+           i.vinculado, i.vinculado_fecha, i.vinculado_en, i.vinculado_obs,
+           (SELECT nombre FROM usuarios WHERE id = i.vinculado_por) AS vinculado_por_nombre,
            coalesce(t.nombre_completo,
                     'Puesto vacante' || CASE WHEN v.secretaria IS NOT NULL THEN ' (Sria. ' || v.secretaria || ')' ELSE '' END)
              AS titular,
@@ -710,7 +718,8 @@ def ver_interinato(iid: int, u=Depends(usuario_actual)):
                    v.secretaria AS vacante_secretaria, v.fecha_desde AS vacante_desde,
                    dt.nombre AS despacho_titular, dx.nombre AS despacho_interino, c.nombre AS cargo,
                    uc.nombre AS creado_por_nombre, um.nombre AS modificado_por_nombre,
-                   (SELECT nombre FROM usuarios WHERE id = i.desvinculado_por) AS desvinculado_por_nombre
+                   (SELECT nombre FROM usuarios WHERE id = i.desvinculado_por) AS desvinculado_por_nombre,
+                   (SELECT nombre FROM usuarios WHERE id = i.vinculado_por) AS vinculado_por_nombre
             FROM interinatos i
             LEFT JOIN personal t ON t.id = i.titular_id
             LEFT JOIN vacantes v ON v.id = i.vacante_id
@@ -740,6 +749,15 @@ def editar_interinato(iid: int, body: InterinatoIn, u=Depends(usuario_actual)):
         infos = servicios.editar_interinato(conn, iid, body.model_dump(), body.version, u["id"],
                                             body.confirmar_advertencias)
     return {"id": iid, "avisos": [a.a_dict() for a in infos]}
+
+
+@app.post("/api/interinatos/{iid}/vincular")
+def vincular_interinato(iid: int, body: VincularIn, u=Depends(usuario_actual)):
+    """Acción manual de vinculación: queda en la auditoría con el usuario que la hizo."""
+    with db.conexion() as conn:
+        servicios.vincular_interinato(conn, iid, body.fecha or hoy(), body.observacion, body.version,
+                                      u["id"], hoy())
+    return {"ok": True}
 
 
 @app.post("/api/interinatos/{iid}/desvincular")

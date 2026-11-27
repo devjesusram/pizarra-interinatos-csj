@@ -273,6 +273,19 @@ MIGRACIONES = [
                desvinculado_obs = 'Registro anterior a la desvinculación manual'
          WHERE fecha_fin < date('now', '-4 hours') AND estado <> 'ANULADO';
     """),
+    (6, "Vinculación manual registrada (quién y cuándo)", """
+        ALTER TABLE interinatos ADD COLUMN vinculado INTEGER NOT NULL DEFAULT 0 CHECK (vinculado IN (0, 1));
+        ALTER TABLE interinatos ADD COLUMN vinculado_fecha TEXT;
+        ALTER TABLE interinatos ADD COLUMN vinculado_por INTEGER REFERENCES usuarios(id);
+        ALTER TABLE interinatos ADD COLUMN vinculado_en TEXT;
+        ALTER TABLE interinatos ADD COLUMN vinculado_obs TEXT;
+        -- Los interinazgos cargados antes de esta versión se dan por vinculados ("registro anterior":
+        -- sin usuario), para no aparecer todos como pendientes de vincular.
+        UPDATE interinatos SET vinculado = 1, vinculado_fecha = fecha_inicio,
+               vinculado_en = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+               vinculado_obs = 'Registro anterior a la vinculación manual'
+         WHERE estado <> 'ANULADO';
+    """),
 ]
 VERSION_ACTUAL = MIGRACIONES[-1][0]
 

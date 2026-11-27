@@ -212,7 +212,7 @@ def test_manual_sin_internet_ni_sesion(cliente):
     assert r.status_code == 200 and "Manual de usuario" in r.text
     import re
     imagenes = re.findall(r'src="(/static/manual/[^"]+)"', r.text)
-    assert len(imagenes) == 23
+    assert len(imagenes) == 24
     for src in imagenes:                                  # todas las capturas están incluidas
         assert cliente.get(src).status_code == 200
     assert "http" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', r.text)).replace("http://172.31.60.254:8090", "")
@@ -384,3 +384,46 @@ def test_licencia_con_providencia_y_fecha_de_correo_sin_hora(cliente, datos):
     assert r.status_code == 201, r.text
     lic = cliente.get(f"/api/licencias/{r.json()['id']}").json()
     assert lic["correo_fecha"] == "2027-02-20" and lic["nro_resolucion"] == "Prov. 123/2027"
+
+
+def test_vincular_queda_en_auditoria_y_se_reinicia_si_cambia_el_interino(cliente, datos, conn):
+    from datetime import datetime, timedelta
+    from app import config
+    hoy = datetime.now(config.ZONA).date()
+    entrar(cliente, "oper")
+    iid = cliente.post("/api/interinatos", json={"titular_id": datos["juez1"], "interino_id": datos["juez2"],
+                                                 "fecha_inicio": (hoy - timedelta(days=2)).isoformat(),
+                                                 "fecha_fin": (hoy + timedelta(days=5)).isoformat(),
+                                                 "confirmar_advertencias": True}).json()["id"]
+    det = cliente.get(f"/api/interinatos/{iid}").json()
+    assert det["vinculado"] == 0
+    v = det["version"]
+    # No en el futuro, ni después del último día
+    r = cliente.post(f"/api/interinatos/{iid}/vincular", json={"fecha": (hoy + timedelta(days=1)).isoformat(), "version": v})
+    assert r.status_code == 409 and r.json()["hallazgos"][0]["regla"] == "V2"
+    r = cliente.post(f"/api/interinatos/{iid}/vincular", json={"observacion": "Notificado por teléfono", "version": v})
+    assert r.status_code == 200
+    det = cliente.get(f"/api/interinatos/{iid}").json()
+    assert det["vinculado"] == 1 and det["vinculado_fecha"] == hoy.isoformat()
+    assert det["vinculado_por_nombre"] == "Operador" and det["vinculado_obs"] == "Notificado por teléfono"
+    # No se vincula dos veces
+    r = cliente.post(f"/api/interinatos/{iid}/vincular", json={"version": det["version"]})
+    assert r.status_code == 409 and r.json()["hallazgos"][0]["regla"] == "V1"
+    aud = conn.execute("SELECT a.accion, u.usuario FROM auditoria a JOIN usuarios u ON u.id = a.usuario_id "
+                       "WHERE a.tabla = 'interinatos' AND a.registro_id = ? ORDER BY a.id", (iid,)).fetchall()
+    assert [x["accion"] for x in aud] == ["CREAR", "VINCULAR"] and aud[-1]["usuario"] == "oper"
+    rec = [i for i in cliente.get(f"/api/tablero?anio={hoy.year}").json()["interinatos"] if i["id"] == iid][0]
+    assert rec["vinculado"] == 1 and rec["vinculado_por_nombre"] == "Operador"
+    # Editar sin cambiar de interino conserva la vinculación; con otro interino la reinicia
+    r = cliente.put(f"/api/interinatos/{iid}", json={"titular_id": det["titular_id"], "interino_id": det["interino_id"],
+                                                     "fecha_inicio": det["fecha_inicio"], "fecha_fin": det["fecha_fin"],
+                                                     "version": det["version"], "confirmar_advertencias": True})
+    assert r.status_code == 200 and cliente.get(f"/api/interinatos/{iid}").json()["vinculado"] == 1
+    det = cliente.get(f"/api/interinatos/{iid}").json()
+    otro = datos["juez3"]
+    r = cliente.put(f"/api/interinatos/{iid}", json={"titular_id": det["titular_id"], "interino_id": otro,
+                                                     "fecha_inicio": det["fecha_inicio"], "fecha_fin": det["fecha_fin"],
+                                                     "version": det["version"], "confirmar_advertencias": True})
+    assert r.status_code == 200, r.text
+    det = cliente.get(f"/api/interinatos/{iid}").json()
+    assert det["vinculado"] == 0 and det["vinculado_por_nombre"] is None

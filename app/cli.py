@@ -194,7 +194,7 @@ def demo() -> None:
         # Para el tablero: uno sin fecha de desvinculación, uno a desvincular en 2 días,
         # uno ya desvinculado y uno que empieza la semana próxima
         inter(7, 9, "JUEZ", lunes - timedelta(days=7), None)
-        inter(8, 3, "JUEZ", hoy - timedelta(days=5), 8)
+        sin_vincular = inter(8, 3, "JUEZ", hoy - timedelta(days=5), 8)     # queda «Falta vincular»
         ya = inter(1, 3, "JUEZ", lunes - timedelta(days=40), 10)
         servicios.desvincular_interinato(conn, ya, lunes - timedelta(days=31), "Reasumió la titular (dato de ejemplo)",
                                          1, uid, hoy)
@@ -214,6 +214,11 @@ def demo() -> None:
         # Un puesto vacante de ujier sin nadie a cargo
         servicios.crear_vacante(conn, {"despacho_id": despacho_penal, "cargo_codigo": "UJIER",
                                        "fecha_desde": lunes + timedelta(days=2)}, uid)
+        # Vinculación manual: todos los que ya empezaron figuran como vinculados, menos uno
+        for r in db.todos(conn, """SELECT id, version, fecha_inicio FROM interinatos
+                                   WHERE estado <> 'ANULADO' AND vinculado = 0 AND fecha_inicio <= ? AND id <> ?""",
+                          (db.iso(hoy), sin_vincular)):
+            servicios.vincular_interinato(conn, r["id"], r["fecha_inicio"], None, r["version"], uid, hoy)
     print("Datos de ejemplo cargados (son ficticios: reemplácelos por los reales).")
 
 
