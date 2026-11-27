@@ -1348,7 +1348,7 @@ async function equipoDespacho(did) {
   }).join("");
   const html = `<datalist id="dl-srias">${SRIAS.map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
     <p><b>${esc(conTurno(d.nombre, d.turno))}</b> · ${esc(d.fuero)} · ${esc(d.localidad)}</p>
-    <p>${jueces.length ? `Juez titular: <b>${jueces.map((j) => esc(j.nombre_completo)).join(", ")}</b>` : `<b style="color:var(--sin-cubrir)">⚠ Este despacho todavía no tiene juez.</b> Agréguelo abajo o con «+ Nuevo funcionario».`}
+    <p>${jueces.length ? `Juez titular: <b>${jueces.map((j) => esc(j.nombre_completo)).join(", ")}</b>` : `<b style="color:var(--sin-cubrir)">⚠ Este despacho todavía no tiene juez titular.</b>`}
       · Secretarías: <b>${secretarias.length ? secretarias.map((x) => "Nº " + esc(x).replace(/^Nº\s*/, "")).join(", ") : "ninguna asignada"}</b></p>
     <div class="tabla-contenedor"><table class="tabla"><thead><tr><th>Cargo</th><th>Funcionario</th><th>Secretaría</th><th></th></tr></thead><tbody>
     ${equipo.map((p) => `<tr class="${p.activo ? "" : "inactivo"}"><td>${esc(p.cargo)}</td><td>${esc(p.nombre_completo)}${p.activo ? "" : " (dado de baja)"}</td>
@@ -1356,11 +1356,16 @@ async function equipoDespacho(did) {
       || `<tr><td colspan="4" class="ayuda">Todavía no hay funcionarios en este despacho.</td></tr>`}
     ${vacs.map((v) => `<tr><td>${esc(v.cargo)}</td><td><i>⚪ Puesto vacante</i></td><td>${v.secretaria ? "Sria. " + esc(v.secretaria) : "—"}</td><td></td></tr>`).join("")}
     </tbody></table></div>
+    ${jueces.length ? "" : `<div class="aviso-eq"><b>¿Un juez de otro juzgado lo atiende de forma provisoria?</b><br>
+      No lo «agregue» al equipo: eso lo <u>cambia de despacho</u> y deja sin juez a su propio juzgado. Cargue la cobertura:
+      <div style="margin-top:8px"><button class="btn primario" id="eq-cubrir">Cubrir provisoriamente…</button></div>
+      <span class="ayuda">Registra este puesto de Juez como vacante y asigna a quien lo cubre. Nadie cambia de despacho: el juez sigue siendo titular de su juzgado y figura además cubriendo este.</span></div>
+      <p class="ayuda" style="margin-top:10px">Use «Agregar» solo para designar a un juez <b>titular</b> definitivo de este despacho.</p>`}
     <h3 style="margin:16px 0 6px;font-size:14px">Agregar al equipo</h3>
     <div class="fila-campos"><select id="eq-persona" style="flex:1;min-width:240px"><option value="">— Elija un funcionario de otro despacho —</option>${opcionesOtros}</select>
       ${selSria("", 'id="eq-sria"')}<button class="btn primario" id="eq-agregar">Agregar</button></div>
     <p class="ayuda">Así se asignan las secretarias al juez: elija a cada una, póngale su Secretaría (Nº 1, Nº 2… o escriba otra) y pulse «Agregar».
-      La persona pasa a este despacho y deja el anterior. ${jueces.length ? "No se ofrecen jueces porque este despacho ya tiene su juez titular." : ""}
+      <b>La persona pasa a este despacho y deja el anterior.</b> ${jueces.length ? "No se ofrecen jueces porque este despacho ya tiene su juez titular." : ""}
       Para alguien que todavía no está cargado, use «+ Nuevo funcionario».</p>`;
   const titulo = jueces.length ? `Equipo de ${jueces[0].nombre_completo} (Juez) — ${conTurno(d.nombre, d.turno)}` : `Equipo de ${conTurno(d.nombre, d.turno)}`;
   const { cuerpo } = modal($("#modal"), { titulo, ancho: true, cuerpo: html, pie: [
@@ -1397,10 +1402,27 @@ async function equipoDespacho(did) {
     if (!p) return toast("Elija un funcionario.");
     const ok = await confirmar("Agregar al equipo", `<p><b>${esc(p.nombre_completo)}</b> (${esc(p.cargo)}) pasa de
       <b>${esc(conTurno(p.despacho, p.turno))}</b> a <b>${esc(conTurno(d.nombre, d.turno))}</b>.</p>
-      <p class="ayuda">Sus licencias e interinatos se conservan.</p>`, "Agregar");
+      <p class="ayuda">Sus licencias e interinatos se conservan.</p>
+      ${p.cargo_codigo === "JUEZ" ? `<p style="background:var(--sin-cubrir-fondo);padding:8px 10px;border-radius:var(--radio)"><b>⚠ Es un cambio de despacho definitivo.</b>
+        ${esc(conTurno(p.despacho, p.turno))} quedará sin juez titular. Si solo va a cubrir <b>de forma provisoria</b>, cancele y use <b>«Cubrir provisoriamente…»</b>.</p>` : ""}`, "Agregar");
     if (!ok) return;
     try { await guardarPersona(p, { despacho_id: did, secretaria: $("#eq-sria", cuerpo).value.trim() || null }, `${p.nombre_completo} se agregó al equipo.`); }
     catch (e) { mostrarError(e); }
+  };
+  const btnCubrir = $("#eq-cubrir", cuerpo);
+  if (btnCubrir) btnCubrir.onclick = async () => {
+    const ok = await confirmar("Cubrir provisoriamente", `<p>Se registra el puesto de <b>Juez</b> de <b>${esc(conTurno(d.nombre, d.turno))}</b>
+      como <b>vacante</b> (desde hoy) y se abre el formulario para elegir quién lo cubre.</p>
+      <p class="ayuda">Nadie cambia de despacho. Si cierra el formulario sin guardar, el puesto queda vacante y aparece en las alertas;
+      puede cubrirlo después desde Administración → Vacantes.</p>`, "Continuar");
+    if (!ok) return;
+    try {
+      let vac = vacs.find((v) => v.cargo_codigo === "JUEZ");
+      if (!vac) vac = await api("POST", "/api/vacantes", { despacho_id: did, cargo_codigo: "JUEZ", fecha_desde: E.hoy });
+      $("#modal").close();
+      await recargar();
+      formInterinato({ vacante_id: vac.id, fecha_inicio: E.hoy });
+    } catch (e) { mostrarError(e); }
   };
   function nuevoEnDespacho() {
     formSimple(`Nuevo funcionario en ${conTurno(d.nombre, d.turno)}`, [

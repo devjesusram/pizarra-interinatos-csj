@@ -212,7 +212,7 @@ def test_manual_sin_internet_ni_sesion(cliente):
     assert r.status_code == 200 and "Manual de usuario" in r.text
     import re
     imagenes = re.findall(r'src="(/static/manual/[^"]+)"', r.text)
-    assert len(imagenes) == 24
+    assert len(imagenes) == 26
     for src in imagenes:                                  # todas las capturas están incluidas
         assert cliente.get(src).status_code == 200
     assert "http" not in "".join(re.findall(r'(?:src|href)="([^"]+)"', r.text)).replace("http://172.31.60.254:8090", "")
@@ -427,3 +427,30 @@ def test_vincular_queda_en_auditoria_y_se_reinicia_si_cambia_el_interino(cliente
     assert r.status_code == 200, r.text
     det = cliente.get(f"/api/interinatos/{iid}").json()
     assert det["vinculado"] == 0 and det["vinculado_por_nombre"] is None
+
+
+def test_juez_titular_de_un_juzgado_cubre_provisoriamente_otro_sin_moverse(cliente, datos, conn):
+    """Caso real: una jueza es titular del 3º Turno y atiende de forma provisoria el 1º Turno, que no tiene
+    juez. Se carga como puesto vacante de Juez + interinazgo; ella NO cambia de despacho."""
+    from datetime import datetime, timedelta
+    from app import config
+    hoy = datetime.now(config.ZONA).date()
+    entrar(cliente)
+    jueza = datos["juez1"]
+    despacho_propio = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (jueza,)).fetchone()["despacho_id"]
+    otro = conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (datos["juez2"],)).fetchone()["despacho_id"]
+    vid = cliente.post("/api/vacantes", json={"despacho_id": otro, "cargo_codigo": "JUEZ",
+                                              "fecha_desde": (hoy - timedelta(days=3)).isoformat()}).json()["id"]
+    assert [v["vacante_id"] for v in cliente.get("/api/alertas").json()["vacantes_sin_cubrir"]] == [vid]
+    r = cliente.post("/api/interinatos", json={"vacante_id": vid, "interino_id": jueza,
+                                               "fecha_inicio": (hoy - timedelta(days=3)).isoformat()})
+    assert r.status_code == 201, r.text
+    assert cliente.get("/api/alertas").json()["vacantes_sin_cubrir"] == []
+    # Su despacho propio no cambió y el tablero la muestra como interina del puesto vacante
+    assert conn.execute("SELECT despacho_id FROM personal WHERE id = ?", (jueza,)).fetchone()["despacho_id"] == despacho_propio
+    rec = [i for i in cliente.get(f"/api/tablero?anio={hoy.year}").json()["interinatos"] if i["interino_id"] == jueza][0]
+    assert rec["titular"].startswith("Puesto vacante") and rec["despacho_titular"] == "J2"
+    # Y puede seguir cubriendo a un tercero a la vez (los jueces no tienen límite por defecto)
+    r = cliente.post("/api/interinatos", json={"titular_id": datos["juez3"], "interino_id": jueza,
+                                               "fecha_inicio": hoy.isoformat(), "confirmar_advertencias": True})
+    assert r.status_code == 201 and any(a["regla"] == "R5-info" for a in r.json()["avisos"])

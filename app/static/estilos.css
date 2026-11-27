@@ -383,3 +383,5 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
   .barra .nav, .herramientas, .alertas, .leyenda { display: none; }
   .tablero { overflow: visible; }
 }
+
+.aviso-eq { background: var(--sin-cubrir-fondo); border: 1px solid #e8c77a; border-radius: var(--radio); padding: 10px 12px; margin: 12px 0 4px; }
