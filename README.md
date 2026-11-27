@@ -48,6 +48,8 @@ datos es un solo archivo (SQLite). Se instala en una PC que hace de servidor y e
 - **Modo TV:** pantalla de solo lectura para un monitor en la oficina.
 - **Manual de usuario incluido:** en `/manual` (menú 👤 → 📖 Manual de usuario, o desde la pantalla de ingreso),
   con capturas de pantalla y sin necesidad de internet. Se puede imprimir o guardar como PDF.
+- **Icono personalizable:** la pestaña del navegador muestra una balanza azul; para usar otro basta con copiar un
+  `icono.ico` (o `icono.png`) a la carpeta `datos/`, sin reiniciar y sin perderlo al actualizar.
 - **Usuarios y roles:** OPERADOR / ADMIN, con **auditoría** completa.
 - **Actualización automática:** cada 15 segundos cada pantalla busca cambios de los demás usuarios y se redibuja
   sola (sin F5), sin interrumpir a quien tiene un formulario abierto. Indicador «● Actualizado hace…» en la barra.

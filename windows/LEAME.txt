@@ -40,6 +40,12 @@ datos\adjuntos\ .............. PDF y correos adjuntos
 datos\registros\pizarra.log .. registro de funcionamiento y errores
 respaldos\ ................... respaldos (copielos a otro equipo seguido)
 
+ICONO DE LA PIZARRA (opcional)
+------------------------------
+Para cambiar el icono de la pestana del navegador, copie su archivo
+icono.ico (o un icono.png cuadrado) a la carpeta  datos  (C:\Pizarra\datos).
+No hace falta reiniciar: en cada PC pulse Ctrl+F5. Se conserva al actualizar.
+
 MANUAL DE USUARIO
 -----------------
 Dentro del sistema: menu (su nombre) -> Manual de usuario, o el enlace de la

@@ -911,6 +911,17 @@ def pagina_manual():
     return FileResponse(STATIC / "manual.html")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Icono de la pestaña del navegador. Si existe datos/icono.ico (o icono.png) se usa ese, así cada
+    institución lo personaliza sin tocar el programa y se conserva al actualizar; si no, el predeterminado."""
+    for nombre, tipo in (("icono.ico", "image/x-icon"), ("icono.png", "image/png")):
+        archivo = config.DATOS_DIR / nombre
+        if archivo.is_file():
+            return FileResponse(archivo, media_type=tipo)
+    return FileResponse(STATIC / "favicon.ico", media_type="image/x-icon")
+
+
 @app.get("/salud", include_in_schema=False)
 def salud():
     with db.conexion() as conn:
@@ -927,7 +938,7 @@ async def cabeceras(request: Request, call_next):
     ruta = request.url.path
     if ruta.startswith("/api/"):
         resp.headers["Cache-Control"] = "no-store"
-    elif ruta.startswith("/static/") or ruta in ("/", "/login", "/manual"):
+    elif ruta.startswith("/static/") or ruta in ("/", "/login", "/manual", "/favicon.ico"):
         # El navegador puede guardar la página, pero debe preguntar si cambió antes de usarla:
         # así, después de actualizar la Pizarra, todos ven la versión nueva sin Ctrl+F5.
         resp.headers["Cache-Control"] = "no-cache"

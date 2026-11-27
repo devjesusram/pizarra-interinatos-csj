@@ -499,3 +499,18 @@ def test_juez_titular_de_dos_juzgados(cliente, datos, conn):
     # Solo un administrador
     entrar(cliente, "oper")
     assert cliente.post(f"/api/personal/{datos['juez3']}/despachos-extra", json={"despacho_id": j5}).status_code == 403
+
+
+def test_favicon_predeterminado_y_personalizado(cliente, tmp_path, monkeypatch):
+    r = cliente.get("/favicon.ico")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/x-icon"
+    assert r.content[:4] == b"\x00\x00\x01\x00" and r.headers["cache-control"] == "no-cache"
+    # Si la institución deja su icono.ico en la carpeta de datos, se usa ese
+    from app import config
+    monkeypatch.setattr(config, "DATOS_DIR", tmp_path / "datos-propios")
+    config.DATOS_DIR.mkdir(parents=True, exist_ok=True)
+    propio = b"\x00\x00\x01\x00PROPIO"
+    (config.DATOS_DIR / "icono.ico").write_bytes(propio)
+    assert cliente.get("/favicon.ico").content == propio
+    for pagina in ("/", "/login", "/manual"):
+        assert 'rel="icon" href="/favicon.ico"' in cliente.get(pagina).text
